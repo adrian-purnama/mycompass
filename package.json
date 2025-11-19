@@ -9,9 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@queryleaf/lib": "^0.2.3",
+    "crypto-js": "^4.2.0",
+    "mongodb": "^7.0.0",
     "next": "16.0.3",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "react-icons": "^5.5.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
