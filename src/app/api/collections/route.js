@@ -13,7 +13,7 @@ export async function POST(request) {
       );
     }
 
-    const { connectionString, databaseName } = body || {};
+    const { connectionString, databaseName, includeCounts = true } = body || {};
 
     if (!connectionString || !databaseName) {
       return NextResponse.json(
@@ -22,7 +22,7 @@ export async function POST(request) {
       );
     }
 
-    const collections = await listCollections(connectionString, databaseName);
+    const collections = await listCollections(connectionString, databaseName, includeCounts);
 
     return NextResponse.json({ success: true, collections });
   } catch (error) {

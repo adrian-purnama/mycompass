@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { FiPlay, FiCopy, FiX, FiGrid, FiCode, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiPlay, FiCopy, FiX, FiCode, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 
 export default function QueryEditor({
   connectionString,
@@ -14,7 +14,6 @@ export default function QueryEditor({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [queryHistory, setQueryHistory] = useState([]);
-  const [viewFormat, setViewFormat] = useState('json'); // 'json' or 'table'
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage] = useState(100); // Show 100 rows per page
 
@@ -74,48 +73,6 @@ export default function QueryEditor({
     return JSON.stringify(data, null, 2);
   };
 
-  // Convert results to table format with pagination
-  const getTableData = useMemo(() => {
-    if (!results || !Array.isArray(results) || results.length === 0) {
-      return { headers: [], rows: [], totalRows: 0 };
-    }
-
-    // Collect all unique keys from all documents
-    const allKeys = new Set();
-    results.forEach((doc) => {
-      if (typeof doc === 'object' && doc !== null) {
-        Object.keys(doc).forEach((key) => allKeys.add(key));
-      }
-    });
-
-    const headers = Array.from(allKeys).sort();
-    const totalRows = results.length;
-    
-    // Paginate results
-    const startIndex = (currentPage - 1) * rowsPerPage;
-    const endIndex = startIndex + rowsPerPage;
-    const paginatedResults = results.slice(startIndex, endIndex);
-    
-    const rows = paginatedResults.map((doc) => {
-      return headers.map((header) => {
-        const value = doc[header];
-        if (value === null || value === undefined) {
-          return '';
-        }
-        let cellValue;
-        if (typeof value === 'object') {
-          cellValue = JSON.stringify(value);
-        } else {
-          cellValue = String(value);
-        }
-        
-        // Don't truncate - let table scroll horizontally
-        return cellValue;
-      });
-    });
-
-    return { headers, rows, totalRows };
-  }, [results, currentPage, rowsPerPage]);
 
   // Get paginated JSON results
   const getPaginatedResults = useMemo(() => {
@@ -127,51 +84,8 @@ export default function QueryEditor({
 
   const totalPages = results ? Math.ceil(results.length / rowsPerPage) : 0;
 
-  // Convert to CSV format (tab-separated for Excel)
-  const convertToCSV = (headers, rows) => {
-    const lines = [];
-    // Header row
-    lines.push(headers.join('\t'));
-    // Data rows
-    rows.forEach((row) => {
-      lines.push(row.map((cell) => {
-        // Escape tabs and newlines, wrap in quotes if contains special chars
-        const cellStr = String(cell);
-        if (cellStr.includes('\t') || cellStr.includes('\n') || cellStr.includes('"')) {
-          return `"${cellStr.replace(/"/g, '""')}"`;
-        }
-        return cellStr;
-      }).join('\t'));
-    });
-    return lines.join('\n');
-  };
-
   const copyAsJSON = () => {
     copyToClipboard(formatResults(results));
-  };
-
-  const copyAsTable = () => {
-    // Copy all results, not just current page
-    if (!results || !Array.isArray(results) || results.length === 0) return;
-    
-    const allKeys = new Set();
-    results.forEach((doc) => {
-      if (typeof doc === 'object' && doc !== null) {
-        Object.keys(doc).forEach((key) => allKeys.add(key));
-      }
-    });
-    const headers = Array.from(allKeys).sort();
-    const allRows = results.map((doc) => {
-      return headers.map((header) => {
-        const value = doc[header];
-        if (value === null || value === undefined) return '';
-        if (typeof value === 'object') return JSON.stringify(value);
-        return String(value);
-      });
-    });
-    
-    const csv = convertToCSV(headers, allRows);
-    copyToClipboard(csv);
   };
 
   // Reset to page 1 when results change
@@ -184,7 +98,7 @@ export default function QueryEditor({
   };
 
   return (
-    <div className="h-full flex flex-col border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 min-h-0">
+    <div className="h-full flex flex-col border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 min-h-0 min-w-0">
       <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0">
         <h3 className="font-semibold text-black dark:text-zinc-50">MongoDB Query Editor</h3>
         <div className="flex items-center gap-2">
@@ -215,8 +129,8 @@ export default function QueryEditor({
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0">
             <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
               Query (JSON)
@@ -259,113 +173,31 @@ export default function QueryEditor({
                   )}
                 </h4>
                 <div className="flex items-center gap-2">
-                  {/* Format Toggle */}
-                  <div className="flex items-center gap-1 border border-zinc-300 dark:border-zinc-700 rounded-md overflow-hidden">
-                    <button
-                      onClick={() => setViewFormat('json')}
-                      className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                        viewFormat === 'json'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                      }`}
-                    >
-                      <FiCode size={14} />
-                      JSON
-                    </button>
-                    <button
-                      onClick={() => setViewFormat('table')}
-                      className={`px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1 ${
-                        viewFormat === 'table'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                      }`}
-                    >
-                      <FiGrid size={14} />
-                      Table
-                    </button>
-                  </div>
                   {/* Copy Button */}
                   <button
-                    onClick={viewFormat === 'json' ? copyAsJSON : copyAsTable}
+                    onClick={copyAsJSON}
                     className="flex items-center gap-1 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md text-sm font-medium transition-colors"
-                    title={viewFormat === 'json' ? 'Copy as JSON' : 'Copy as CSV (Excel-ready)'}
+                    title="Copy as JSON"
                   >
                     <FiCopy size={14} />
-                    Copy {viewFormat === 'table' ? 'CSV' : 'JSON'}
+                    Copy JSON
                   </button>
                 </div>
               </div>
 
               {/* JSON View */}
-              {viewFormat === 'json' && (
-                <div className="flex-1 flex flex-col overflow-hidden px-4 pb-4 min-h-0">
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <pre className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md text-sm font-mono text-black dark:text-zinc-50 whitespace-pre" style={{ margin: 0, display: 'block' }}>
-                      {formatResults(getPaginatedResults)}
-                    </pre>
-                  </div>
-                  {results.length > rowsPerPage && (
-                    <div className="mt-2 text-xs text-zinc-500 dark:text-zinc-400 flex-shrink-0">
-                      Showing {getPaginatedResults.length} of {results.length} results
-                    </div>
-                  )}
+              <div className="flex-1 flex flex-col overflow-hidden px-4 pb-4 min-h-0">
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <pre className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md text-sm font-mono text-black dark:text-zinc-50 whitespace-pre" style={{ margin: 0, display: 'block' }}>
+                    {formatResults(getPaginatedResults)}
+                  </pre>
                 </div>
-              )}
-
-              {/* Table View */}
-              {viewFormat === 'table' && (
-                <div className="flex-1 flex flex-col overflow-hidden px-4 pb-4 min-h-0" style={{ minWidth: 0, width: '100%' }}>
-                  <div className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden min-h-0" style={{ minWidth: 0, width: '100%' }}>
-                    <div style={{ width: '100%', height: '100%', overflow: 'auto', position: 'relative' }}>
-                      <table className="text-sm" style={{ width: 'max-content', tableLayout: 'auto' }}>
-                      <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
-                        <tr>
-                          {getTableData.headers.map((header, idx) => (
-                            <th
-                              key={idx}
-                              className="px-2 py-1.5 text-left font-semibold text-black dark:text-zinc-50 sticky top-0 bg-zinc-100 dark:bg-zinc-900 z-10"
-                            >
-                              {header}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {getTableData.rows.map((row, rowIdx) => {
-                          const actualRowIdx = (currentPage - 1) * rowsPerPage + rowIdx;
-                          return (
-                            <tr
-                              key={actualRowIdx}
-                              className="border-b border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                            >
-                              {row.map((cell, cellIdx) => {
-                                // Get full cell value for tooltip
-                                const fullValue = results[actualRowIdx]?.[getTableData.headers[cellIdx]];
-                                const fullCellValue = fullValue === null || fullValue === undefined 
-                                  ? '' 
-                                  : typeof fullValue === 'object' 
-                                    ? JSON.stringify(fullValue) 
-                                    : String(fullValue);
-                                
-                                return (
-                                  <td
-                                    key={cellIdx}
-                                    className="px-2 py-1.5 text-black dark:text-zinc-50 whitespace-nowrap"
-                                    title={fullCellValue}
-                                  >
-                                    {cell || <span className="text-zinc-400">—</span>}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    </div>
+                {results.length > rowsPerPage && (
+                  <div className="mt-2 text-xs text-zinc-500 dark:text-zinc-400 flex-shrink-0">
+                    Showing {getPaginatedResults.length} of {results.length} results
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Pagination Controls */}
               {totalPages > 1 && (

@@ -6,30 +6,45 @@ import { FiX, FiCopy, FiDatabase, FiCheckSquare, FiSquare } from 'react-icons/fi
 export default function CloneDialog({
   isOpen,
   onClose,
-  sourceConnectionString,
-  sourceDatabase,
-  collectionName,
   availableConnections
 }) {
+  const [sourceConnectionId, setSourceConnectionId] = useState('');
+  const [sourceDatabase, setSourceDatabase] = useState('');
+  const [sourceDatabases, setSourceDatabases] = useState([]);
+  const [loadingSourceDatabases, setLoadingSourceDatabases] = useState(false);
   const [targetConnectionId, setTargetConnectionId] = useState('');
   const [targetDatabase, setTargetDatabase] = useState('');
   const [targetDatabases, setTargetDatabases] = useState([]);
-  const [loadingDatabases, setLoadingDatabases] = useState(false);
+  const [loadingTargetDatabases, setLoadingTargetDatabases] = useState(false);
   const [availableCollections, setAvailableCollections] = useState([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [selectedCollections, setSelectedCollections] = useState([]);
-  const [cloneType, setCloneType] = useState(collectionName ? 'collection' : 'database');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
+  // Load source databases when source connection is selected
+  useEffect(() => {
+    if (sourceConnectionId && isOpen) {
+      loadSourceDatabases();
+    } else {
+      setSourceDatabases([]);
+      setSourceDatabase('');
+      setAvailableCollections([]);
+      setSelectedCollections([]);
+    }
+  }, [sourceConnectionId, isOpen]);
+
   // Load available collections from source database
   useEffect(() => {
-    if (isOpen && sourceConnectionString && sourceDatabase) {
+    if (isOpen && sourceConnectionId && sourceDatabase) {
       loadSourceCollections();
+    } else {
+      setAvailableCollections([]);
+      setSelectedCollections([]);
     }
-  }, [isOpen, sourceConnectionString, sourceDatabase]);
+  }, [isOpen, sourceConnectionId, sourceDatabase]);
 
   // Load target databases when target connection is selected
   useEffect(() => {
@@ -44,19 +59,48 @@ export default function CloneDialog({
   // Reset state when dialog opens/closes
   useEffect(() => {
     if (isOpen) {
+      setSourceConnectionId('');
+      setSourceDatabase('');
+      setSourceDatabases([]);
       setTargetConnectionId('');
       setTargetDatabase('');
       setTargetDatabases([]);
       setSelectedCollections([]);
-      setCloneType(collectionName ? 'collection' : 'database');
       setProgress(null);
       setError(null);
       setSuccess(null);
     }
-  }, [isOpen, collectionName]);
+  }, [isOpen]);
+
+  const loadSourceDatabases = async () => {
+    const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
+    if (!sourceConnection) return;
+
+    setLoadingSourceDatabases(true);
+    try {
+      const response = await fetch('/api/databases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connectionString: sourceConnection.connectionString
+        })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setSourceDatabases(result.databases || []);
+      }
+    } catch (error) {
+      console.error('Failed to load source databases:', error);
+      setError('Failed to load source databases');
+    } finally {
+      setLoadingSourceDatabases(false);
+    }
+  };
 
   const loadSourceCollections = async () => {
-    if (!sourceConnectionString || !sourceDatabase) return;
+    const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
+    if (!sourceConnection || !sourceDatabase) return;
     
     setLoadingCollections(true);
     try {
@@ -64,7 +108,7 @@ export default function CloneDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          connectionString: sourceConnectionString,
+          connectionString: sourceConnection.connectionString,
           databaseName: sourceDatabase
         })
       });
@@ -72,10 +116,6 @@ export default function CloneDialog({
       const result = await response.json();
       if (result.success) {
         setAvailableCollections(result.collections || []);
-        // If cloning a specific collection, pre-select it
-        if (collectionName) {
-          setSelectedCollections([collectionName]);
-        }
       }
     } catch (error) {
       console.error('Failed to load collections:', error);
@@ -88,7 +128,7 @@ export default function CloneDialog({
     const targetConnection = availableConnections.find((c) => c.id === targetConnectionId);
     if (!targetConnection) return;
 
-    setLoadingDatabases(true);
+    setLoadingTargetDatabases(true);
     try {
       const response = await fetch('/api/databases', {
         method: 'POST',
@@ -106,7 +146,7 @@ export default function CloneDialog({
       console.error('Failed to load target databases:', error);
       setError('Failed to load target databases');
     } finally {
-      setLoadingDatabases(false);
+      setLoadingTargetDatabases(false);
     }
   };
 
@@ -127,6 +167,11 @@ export default function CloneDialog({
   };
 
   const handleClone = async () => {
+    if (!sourceConnectionId || !sourceDatabase) {
+      setError('Please select source connection and source database');
+      return;
+    }
+
     if (!targetConnectionId || !targetDatabase) {
       setError('Please select target connection and target database');
       return;
@@ -138,7 +183,14 @@ export default function CloneDialog({
       return;
     }
 
+    const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
     const targetConnection = availableConnections.find((c) => c.id === targetConnectionId);
+    
+    if (!sourceConnection) {
+      setError('Source connection not found');
+      return;
+    }
+    
     if (!targetConnection) {
       setError('Target connection not found');
       return;
@@ -154,7 +206,7 @@ export default function CloneDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceConnectionString,
+          sourceConnectionString: sourceConnection.connectionString,
           targetConnectionString: targetConnection.connectionString,
           sourceDatabase,
           targetDatabase,
@@ -192,7 +244,7 @@ export default function CloneDialog({
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-semibold text-black dark:text-zinc-50">
-            Clone {cloneType === 'collection' ? 'Collection' : 'Database'}
+            Clone Collections
           </h2>
           <button
             onClick={onClose}
@@ -203,18 +255,47 @@ export default function CloneDialog({
         </div>
 
         <div className="space-y-4">
-          <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
-            <h3 className="text-sm font-medium mb-2 text-black dark:text-zinc-50">Source</h3>
-            <div className="space-y-1 text-sm">
-              <p className="text-zinc-600 dark:text-zinc-400">
-                <span className="font-medium">Database:</span> {sourceDatabase}
-              </p>
-              {collectionName && (
-                <p className="text-zinc-600 dark:text-zinc-400">
-                  <span className="font-medium">Collection:</span> {collectionName}
-                </p>
-              )}
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+              Source Connection
+            </label>
+            <select
+              value={sourceConnectionId}
+              onChange={(e) => setSourceConnectionId(e.target.value)}
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select source connection</option>
+              {availableConnections.map((conn) => (
+                <option key={conn.id} value={conn.id}>
+                  {conn.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+              Source Database
+            </label>
+            {loadingSourceDatabases ? (
+              <div className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
+                Loading databases...
+              </div>
+            ) : (
+              <select
+                value={sourceDatabase}
+                onChange={(e) => setSourceDatabase(e.target.value)}
+                className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={!sourceConnectionId || loadingSourceDatabases}
+              >
+                <option value="">Select source database</option>
+                {sourceDatabases.map((dbName) => (
+                  <option key={dbName} value={dbName}>
+                    {dbName}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div>
@@ -239,7 +320,7 @@ export default function CloneDialog({
             <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
               Target Database
             </label>
-            {loadingDatabases ? (
+            {loadingTargetDatabases ? (
               <div className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
                 Loading databases...
               </div>
@@ -248,7 +329,7 @@ export default function CloneDialog({
                 value={targetDatabase}
                 onChange={(e) => setTargetDatabase(e.target.value)}
                 className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={!targetConnectionId || loadingDatabases}
+                disabled={!targetConnectionId || loadingTargetDatabases}
               >
                 <option value="">Select target database</option>
                 {targetDatabases.map((dbName) => (
@@ -348,6 +429,8 @@ export default function CloneDialog({
               onClick={handleClone}
               disabled={
                 loading ||
+                !sourceConnectionId ||
+                !sourceDatabase ||
                 !targetConnectionId ||
                 !targetDatabase ||
                 selectedCollections.length === 0

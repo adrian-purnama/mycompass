@@ -88,20 +88,31 @@ export async function listDatabases(connectionString) {
  * Get list of collections in a database
  * @param {string} connectionString - MongoDB connection string
  * @param {string} databaseName - Database name
- * @returns {Promise<Array<{name: string, count: number}>>} Array of collection info
+ * @param {boolean} includeCounts - Whether to include document counts (default: true)
+ * @returns {Promise<Array<{name: string, count: number | null}>>} Array of collection info
+ * Note: count is null while loading, 0 if error, or the actual count
  */
-export async function listCollections(connectionString, databaseName) {
+export async function listCollections(connectionString, databaseName, includeCounts = true) {
   const client = await getMongoClient(connectionString);
   const db = client.db(databaseName);
   const collections = await db.listCollections().toArray();
   
-  // Get document counts for each collection
+  if (!includeCounts) {
+    // Return collections immediately without counts
+    return collections.map((coll) => ({
+      name: coll.name,
+      count: null // null indicates count is loading
+    }));
+  }
+
+  // Fetch counts for each collection (can be slow for large collections)
   const collectionsWithCount = await Promise.all(
     collections.map(async (coll) => {
       try {
         const count = await db.collection(coll.name).countDocuments();
         return { name: coll.name, count };
       } catch (error) {
+        console.error(`Failed to count documents in ${coll.name}:`, error);
         return { name: coll.name, count: 0 };
       }
     })
@@ -205,5 +216,6 @@ export async function closeAllConnections() {
   await Promise.all(promises);
   connectionCache.clear();
 }
+
 
 

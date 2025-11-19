@@ -319,9 +319,9 @@ export default function Home() {
             </div>
           )}
 
-          <div className="flex-1 overflow-hidden relative">
+          <div className="flex-1 overflow-hidden relative min-w-0">
             {/* Keep all components mounted but hide inactive ones */}
-            <div className={`h-full ${activeTab === 'documents' ? 'block' : 'hidden'}`}>
+            <div className={`h-full min-w-0 ${activeTab === 'documents' ? 'block' : 'hidden'}`}>
               <DocumentViewer
                 key={`documents_${selectedDatabase}_${selectedCollection}`}
                 connectionString={activeConnection?.connectionString || null}
@@ -329,7 +329,7 @@ export default function Home() {
                 collectionName={selectedCollection}
               />
             </div>
-            <div className={`h-full ${activeTab === 'query' ? 'block' : 'hidden'}`}>
+            <div className={`h-full min-w-0 ${activeTab === 'query' ? 'block' : 'hidden'}`}>
               <QueryEditor
                 key={`query_${selectedDatabase}_${selectedCollection}`}
                 connectionString={activeConnection?.connectionString || null}
@@ -337,7 +337,7 @@ export default function Home() {
                 collectionName={selectedCollection}
               />
             </div>
-            <div className={`h-full ${activeTab === 'sql' ? 'block' : 'hidden'}`}>
+            <div className={`h-full min-w-0 ${activeTab === 'sql' ? 'block' : 'hidden'}`}>
               <SQLEditor
                 key={`sql_${selectedDatabase}`}
                 connectionString={activeConnection?.connectionString || null}
@@ -360,9 +360,6 @@ export default function Home() {
         <CloneDialog
           isOpen={showCloneDialog}
           onClose={() => setShowCloneDialog(false)}
-          sourceConnectionString={activeConnection?.connectionString}
-          sourceDatabase={selectedDatabase}
-          collectionName={selectedCollection}
           availableConnections={connections}
         />
       )}
