@@ -16,6 +16,8 @@ export default function ExportDialog({
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
+  const [password, setPassword] = useState('');
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   // Ensure availableCollections is always an array
   const collections = Array.isArray(availableCollections) ? availableCollections : [];
@@ -27,6 +29,8 @@ export default function ExportDialog({
       setFormat('json');
       setProgress(null);
       setError(null);
+      setPassword('');
+      setShowPasswordModal(false);
     }
   }, [isOpen]);
   
@@ -60,6 +64,11 @@ export default function ExportDialog({
       return;
     }
 
+    if (!password || password.trim() === '') {
+      setError('Password is required to export');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setProgress('Preparing export...');
@@ -75,7 +84,8 @@ export default function ExportDialog({
           connectionString,
           databaseName,
           collections: collectionsToExport,
-          format
+          format,
+          password: password.trim()
         })
       });
 
@@ -260,7 +270,9 @@ export default function ExportDialog({
                 loading ||
                 (exportType === 'selected' && selectedCollections.length === 0) ||
                 !connectionString ||
-                !databaseName
+                !databaseName ||
+                !password ||
+                password.trim() === ''
               }
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >

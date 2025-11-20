@@ -78,7 +78,9 @@ export default function DocumentViewer({
     if (connectionString && databaseName && collectionName) {
       loadDocuments();
     }
-  }, [connectionString, databaseName, collectionName, page, loadDocuments]);
+    // loadDocuments is memoized with all necessary dependencies, so we don't need it in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionString, databaseName, collectionName, page]);
 
   const handleRefresh = () => {
     loadDocuments();

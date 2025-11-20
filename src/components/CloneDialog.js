@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FiX, FiCopy, FiDatabase, FiCheckSquare, FiSquare } from 'react-icons/fi';
 
 export default function CloneDialog({
@@ -23,56 +23,10 @@ export default function CloneDialog({
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [password, setPassword] = useState('');
 
-  // Load source databases when source connection is selected
-  useEffect(() => {
-    if (sourceConnectionId && isOpen) {
-      loadSourceDatabases();
-    } else {
-      setSourceDatabases([]);
-      setSourceDatabase('');
-      setAvailableCollections([]);
-      setSelectedCollections([]);
-    }
-  }, [sourceConnectionId, isOpen]);
-
-  // Load available collections from source database
-  useEffect(() => {
-    if (isOpen && sourceConnectionId && sourceDatabase) {
-      loadSourceCollections();
-    } else {
-      setAvailableCollections([]);
-      setSelectedCollections([]);
-    }
-  }, [isOpen, sourceConnectionId, sourceDatabase]);
-
-  // Load target databases when target connection is selected
-  useEffect(() => {
-    if (targetConnectionId && isOpen) {
-      loadTargetDatabases();
-    } else {
-      setTargetDatabases([]);
-      setTargetDatabase('');
-    }
-  }, [targetConnectionId, isOpen]);
-
-  // Reset state when dialog opens/closes
-  useEffect(() => {
-    if (isOpen) {
-      setSourceConnectionId('');
-      setSourceDatabase('');
-      setSourceDatabases([]);
-      setTargetConnectionId('');
-      setTargetDatabase('');
-      setTargetDatabases([]);
-      setSelectedCollections([]);
-      setProgress(null);
-      setError(null);
-      setSuccess(null);
-    }
-  }, [isOpen]);
-
-  const loadSourceDatabases = async () => {
+  // Define load functions first (before useEffect hooks that use them)
+  const loadSourceDatabases = useCallback(async () => {
     const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
     if (!sourceConnection) return;
 
@@ -96,9 +50,9 @@ export default function CloneDialog({
     } finally {
       setLoadingSourceDatabases(false);
     }
-  };
+  }, [sourceConnectionId, availableConnections]);
 
-  const loadSourceCollections = async () => {
+  const loadSourceCollections = useCallback(async () => {
     const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
     if (!sourceConnection || !sourceDatabase) return;
     
@@ -122,9 +76,9 @@ export default function CloneDialog({
     } finally {
       setLoadingCollections(false);
     }
-  };
+  }, [sourceConnectionId, sourceDatabase, availableConnections]);
 
-  const loadTargetDatabases = async () => {
+  const loadTargetDatabases = useCallback(async () => {
     const targetConnection = availableConnections.find((c) => c.id === targetConnectionId);
     if (!targetConnection) return;
 
@@ -148,7 +102,56 @@ export default function CloneDialog({
     } finally {
       setLoadingTargetDatabases(false);
     }
-  };
+  }, [targetConnectionId, availableConnections]);
+
+  // Load source databases when source connection is selected
+  useEffect(() => {
+    if (sourceConnectionId && isOpen) {
+      loadSourceDatabases();
+    } else {
+      setSourceDatabases([]);
+      setSourceDatabase('');
+      setAvailableCollections([]);
+      setSelectedCollections([]);
+    }
+  }, [sourceConnectionId, isOpen, loadSourceDatabases]);
+
+  // Load available collections from source database
+  useEffect(() => {
+    if (isOpen && sourceConnectionId && sourceDatabase) {
+      loadSourceCollections();
+    } else {
+      setAvailableCollections([]);
+      setSelectedCollections([]);
+    }
+  }, [isOpen, sourceConnectionId, sourceDatabase, loadSourceCollections]);
+
+  // Load target databases when target connection is selected
+  useEffect(() => {
+    if (targetConnectionId && isOpen) {
+      loadTargetDatabases();
+    } else {
+      setTargetDatabases([]);
+      setTargetDatabase('');
+    }
+  }, [targetConnectionId, isOpen, loadTargetDatabases]);
+
+  // Reset state when dialog opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setSourceConnectionId('');
+      setSourceDatabase('');
+      setSourceDatabases([]);
+      setTargetConnectionId('');
+      setTargetDatabase('');
+      setTargetDatabases([]);
+      setSelectedCollections([]);
+      setProgress(null);
+      setError(null);
+      setSuccess(null);
+      setPassword('');
+    }
+  }, [isOpen]);
 
   const toggleCollection = (collectionName) => {
     setSelectedCollections((prev) =>
@@ -183,6 +186,12 @@ export default function CloneDialog({
       return;
     }
 
+    // Validate password
+    if (!password || password.trim() === '') {
+      setError('Password is required');
+      return;
+    }
+
     const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
     const targetConnection = availableConnections.find((c) => c.id === targetConnectionId);
     
@@ -210,7 +219,8 @@ export default function CloneDialog({
           targetConnectionString: targetConnection.connectionString,
           sourceDatabase,
           targetDatabase,
-          collectionNames: selectedCollections
+          collectionNames: selectedCollections,
+          password: password.trim()
         })
       });
 
@@ -340,17 +350,23 @@ export default function CloneDialog({
               </select>
             )}
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              Select an existing database or enter a new name below
+              Select an existing database from the dropdown above
             </p>
-            {targetDatabases.length > 0 && (
+            <div className="mt-2">
+              <label className="block text-xs font-medium mb-1 text-zinc-600 dark:text-zinc-400">
+                Or create a new database:
+              </label>
               <input
                 type="text"
                 value={targetDatabase}
                 onChange={(e) => setTargetDatabase(e.target.value)}
-                className="mt-2 w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Or enter new database name"
+                className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter new database name"
               />
-            )}
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                <span className="font-semibold">Note:</span> If you enter a new name here, it will create a new database in the target connection
+              </p>
+            </div>
           </div>
 
           <div>
@@ -406,6 +422,24 @@ export default function CloneDialog({
             )}
           </div>
 
+          {/* Password Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+              Backup Password <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter backup password"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="font-semibold">Required</span> backup password to authorize clone operation
+            </p>
+          </div>
+
           {progress && (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
               <p className="text-sm text-blue-600 dark:text-blue-400">{progress}</p>
@@ -433,7 +467,9 @@ export default function CloneDialog({
                 !sourceDatabase ||
                 !targetConnectionId ||
                 !targetDatabase ||
-                selectedCollections.length === 0
+                selectedCollections.length === 0 ||
+                !password ||
+                password.trim() === ''
               }
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >

@@ -48,7 +48,9 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
       setCollections({});
       setExpandedDbs(new Set());
     }
-  }, [connectionString, loadDatabases]);
+    // loadDatabases is memoized with connectionString, so we don't need it in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionString]);
 
   const toggleDatabase = async (dbName) => {
     const newExpanded = new Set(expandedDbs);

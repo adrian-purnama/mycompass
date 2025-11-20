@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 
+// Password required for export operations
+const BACKUP_PASSWORD = process.env.BACKUP_PASSWORD || 'adriangacor';
+
 export async function POST(request) {
   try {
     let body;
@@ -17,7 +20,8 @@ export async function POST(request) {
       connectionString,
       databaseName,
       collections, // Array of collection names, or null for all collections
-      format = 'json' // 'json' or 'bson'
+      format = 'json', // 'json' or 'bson'
+      password
     } = body || {};
 
     if (!connectionString || !databaseName) {
@@ -27,6 +31,16 @@ export async function POST(request) {
           error: 'Connection string and database name are required'
         },
         { status: 400 }
+      );
+    }
+
+    if (!password || password !== BACKUP_PASSWORD) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid password. Access denied.'
+        },
+        { status: 401 }
       );
     }
 

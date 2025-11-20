@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getConnections,
   addConnection as addConnectionStorage,
@@ -16,16 +16,30 @@ export function useConnections(masterPassword) {
   const [activeConnectionId, setActiveConnectionIdState] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const loadingRef = useRef(false);
+  const masterPasswordRef = useRef(masterPassword);
+
+  // Update ref when masterPassword changes
+  useEffect(() => {
+    masterPasswordRef.current = masterPassword;
+  }, [masterPassword]);
 
   // Load connections from storage
   const loadConnections = useCallback(() => {
-    if (!masterPassword) {
+    // Prevent concurrent calls
+    if (loadingRef.current) {
+      return;
+    }
+
+    const currentPassword = masterPasswordRef.current;
+    if (!currentPassword) {
       setConnections([]);
       return;
     }
 
+    loadingRef.current = true;
     try {
-      const loaded = getConnections(masterPassword);
+      const loaded = getConnections(currentPassword);
       setConnections(loaded);
       const activeId = getActiveConnectionId();
       setActiveConnectionIdState(activeId);
@@ -40,17 +54,27 @@ export function useConnections(masterPassword) {
       }
       setConnections([]); // Clear connections on error
       setActiveConnectionIdState(null); // Clear active connection
+    } finally {
+      loadingRef.current = false;
     }
-  }, [masterPassword]);
+  }, []); // Empty deps - we use refs to access current values
 
   useEffect(() => {
     if (masterPassword) {
-      loadConnections();
+      // Load connections when masterPassword changes
+      // Use setTimeout to ensure it runs after render
+      const timeoutId = setTimeout(() => {
+        loadConnections();
+      }, 0);
+      return () => clearTimeout(timeoutId);
     } else {
       setConnections([]);
       setError(null);
+      setActiveConnectionIdState(null);
     }
-  }, [masterPassword, loadConnections]);
+    // loadConnections is stable (empty deps), so we can safely include it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masterPassword]);
 
   // Add a new connection
   const addConnection = useCallback(

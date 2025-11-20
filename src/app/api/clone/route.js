@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 
+// Password required for clone operations (uses same password as backup)
+const BACKUP_PASSWORD = process.env.BACKUP_PASSWORD || 'adriangacor';
+
 export async function POST(request) {
   try {
     let body;
@@ -18,7 +21,8 @@ export async function POST(request) {
       targetConnectionString,
       sourceDatabase,
       targetDatabase,
-      collectionNames // Array of collection names to clone
+      collectionNames, // Array of collection names to clone
+      password
     } = body || {};
 
     if (!sourceConnectionString || !targetConnectionString || !sourceDatabase || !targetDatabase) {
@@ -28,6 +32,16 @@ export async function POST(request) {
           error: 'Source and target connection strings, and database names are required'
         },
         { status: 400 }
+      );
+    }
+
+    if (!password || password !== BACKUP_PASSWORD) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid password. Access denied.'
+        },
+        { status: 401 }
       );
     }
 
