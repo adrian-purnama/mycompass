@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { FiChevronLeft, FiChevronRight, FiCopy, FiRefreshCw } from 'react-icons/fi';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { FiChevronLeft, FiChevronRight, FiCopy, FiRefreshCw, FiGrid, FiCode, FiList } from 'react-icons/fi';
 
 export default function DocumentViewer({
   connectionString,
@@ -15,6 +15,7 @@ export default function DocumentViewer({
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [limit] = useState(20);
+  const [viewMode, setViewMode] = useState('table'); // 'table', 'json', 'list'
 
   // Track previous context to detect changes
   const prevContextRef = useRef({ connectionString, databaseName, collectionName });
@@ -97,9 +98,49 @@ export default function DocumentViewer({
 
   const totalPages = Math.ceil(total / limit);
 
+  // Extract headers for table view
+  const tableHeaders = useMemo(() => {
+    if (!documents || documents.length === 0) return [];
+    const keys = new Set();
+    // Check first 10 documents to get a good set of keys
+    documents.slice(0, 10).forEach(doc => {
+      Object.keys(doc).forEach(k => keys.add(k));
+    });
+    // Ensure _id is first
+    const sortedKeys = Array.from(keys).sort((a, b) => {
+        if (a === '_id') return -1;
+        if (b === '_id') return 1;
+        return a.localeCompare(b);
+    });
+    return sortedKeys;
+  }, [documents]);
+
+  const renderCellValue = (value) => {
+    if (value === null) return <span className="text-muted-foreground italic">null</span>;
+    if (value === undefined) return <span className="text-muted-foreground">-</span>;
+    
+    if (typeof value === 'object') {
+        if (Array.isArray(value)) {
+            return <span className="text-xs font-mono text-blue-600 dark:text-blue-400">Array({value.length})</span>;
+        }
+        // Check for ObjectId
+        if (value.$oid) return <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400">ObjectId("{value.$oid}")</span>;
+        // Check for Date
+        if (value.$date) return <span className="text-xs font-mono text-purple-600 dark:text-purple-400">{new Date(value.$date).toISOString()}</span>;
+        
+        return <span className="text-xs font-mono text-muted-foreground">{'{...}'}</span>;
+    }
+    
+    if (typeof value === 'boolean') {
+      return <span className={`text-xs px-1.5 py-0.5 rounded ${value ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>{String(value)}</span>;
+    }
+    
+    return <span className="truncate block max-w-[200px]" title={String(value)}>{String(value)}</span>;
+  };
+
   if (!connectionString || !databaseName || !collectionName) {
     return (
-      <div className="h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400">
+      <div className="h-full flex items-center justify-center text-muted-foreground">
         <div className="text-center">
           <p>Select a collection to view documents</p>
         </div>
@@ -108,92 +149,163 @@ export default function DocumentViewer({
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-        <div>
-          <h3 className="font-semibold text-black dark:text-zinc-50">
-            {databaseName}.{collectionName}
-          </h3>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {total.toLocaleString()} document{total !== 1 ? 's' : ''}
-          </p>
+    <div className="h-full flex flex-col bg-background">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
+        <div className="flex items-center gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              {collectionName}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {total.toLocaleString()} document{total !== 1 ? 's' : ''}
+            </p>
+          </div>
+          
+          <div className="h-6 w-px bg-border mx-2" />
+
+          <div className="flex bg-muted/50 p-0.5 rounded-lg border border-border">
+            <button 
+                onClick={() => setViewMode('table')}
+                className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'table' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                title="Table View"
+            >
+                <FiGrid size={14} /> Table
+            </button>
+            <button 
+                onClick={() => setViewMode('json')}
+                className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'json' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                title="JSON View"
+            >
+                <FiCode size={14} /> JSON
+            </button>
+            <button 
+                onClick={() => setViewMode('list')}
+                className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                title="List View"
+            >
+                <FiList size={14} /> List
+            </button>
+          </div>
         </div>
+
         <button
           onClick={handleRefresh}
           disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors disabled:opacity-50"
         >
-          <FiRefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          <FiRefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
 
       {error && (
-        <div className="mx-4 mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <div className="m-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-hidden relative">
         {loading && documents.length === 0 ? (
-          <div className="text-center py-8 text-zinc-500 dark:text-zinc-400">
-            <p>Loading documents...</p>
+          <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+            <div className="flex flex-col items-center gap-2">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-muted-foreground">Loading documents...</p>
+            </div>
           </div>
         ) : documents.length === 0 ? (
-          <div className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+          <div className="h-full flex items-center justify-center text-muted-foreground">
             <p>No documents found</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {documents.map((doc, index) => (
-              <div
-                key={doc._id || index}
-                className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden"
-              >
-                <div className="flex items-center justify-between px-4 py-2 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
-                  <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 break-words max-w-md truncate" title={doc._id ? `Document ${index + 1 + (page - 1) * limit} • ID: ${doc._id}` : `Document ${index + 1 + (page - 1) * limit}`}>
-                    Document {index + 1 + (page - 1) * limit}
-                    {doc._id && ` • ID: ${doc._id}`}
-                  </span>
-                  <button
-                    onClick={() => copyToClipboard(formatDocument(doc))}
-                    className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
-                    title="Copy to clipboard"
-                  >
-                    <FiCopy size={14} />
-                    Copy
-                  </button>
-                </div>
-                <pre className="p-4 overflow-x-auto text-sm font-mono text-black dark:text-zinc-50 bg-white dark:bg-zinc-950 whitespace-pre-wrap break-words max-w-full">
-                  {formatDocument(doc)}
-                </pre>
-              </div>
-            ))}
-          </div>
+            <div className="h-full overflow-auto">
+                {viewMode === 'table' && (
+                    <table className="w-full text-left border-collapse text-sm">
+                        <thead className="bg-muted/50 sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                <th className="px-4 py-2 border-b border-border w-12 text-xs font-medium text-muted-foreground text-center">#</th>
+                                {tableHeaders.map(header => (
+                                    <th key={header} className="px-4 py-2 border-b border-border text-xs font-semibold text-foreground whitespace-nowrap">
+                                        {header}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border bg-card">
+                            {documents.map((doc, i) => (
+                                <tr key={doc._id || i} className="hover:bg-accent/50 transition-colors group">
+                                    <td className="px-4 py-2 text-xs text-muted-foreground text-center font-mono border-r border-border/50 bg-muted/10">
+                                        {(page - 1) * limit + i + 1}
+                                    </td>
+                                    {tableHeaders.map(header => (
+                                        <td key={`${i}-${header}`} className="px-4 py-2 whitespace-nowrap max-w-xs truncate font-mono text-xs">
+                                            {renderCellValue(doc[header])}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+
+                {viewMode === 'json' && (
+                    <div className="p-4">
+                        <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                            {JSON.stringify(documents, null, 2)}
+                        </pre>
+                    </div>
+                )}
+
+                {viewMode === 'list' && (
+                    <div className="p-4 space-y-4">
+                        {documents.map((doc, index) => (
+                        <div
+                            key={doc._id || index}
+                            className="border border-border rounded-lg overflow-hidden bg-card shadow-sm"
+                        >
+                            <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b border-border">
+                            <span className="text-xs font-mono text-muted-foreground">
+                                Document {(page - 1) * limit + index + 1}
+                                {doc._id && <span className="ml-2 text-foreground">• ID: {String(doc._id)}</span>}
+                            </span>
+                            <button
+                                onClick={() => copyToClipboard(formatDocument(doc))}
+                                className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                                title="Copy to clipboard"
+                            >
+                                <FiCopy size={12} />
+                                Copy
+                            </button>
+                            </div>
+                            <pre className="p-3 overflow-x-auto text-xs font-mono text-foreground bg-card whitespace-pre-wrap break-words">
+                                {formatDocument(doc)}
+                            </pre>
+                        </div>
+                        ))}
+                    </div>
+                )}
+            </div>
         )}
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between p-4 border-t border-zinc-200 dark:border-zinc-800">
-          <div className="text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="flex items-center justify-between px-4 py-2 border-t border-border bg-card shrink-0">
+          <div className="text-xs text-muted-foreground">
             Page {page} of {totalPages}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1 || loading}
-              className="flex items-center gap-1 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-8 w-8 flex items-center justify-center border border-input rounded-md hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <FiChevronLeft size={16} />
-              Previous
+              <FiChevronLeft size={14} />
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages || loading}
-              className="flex items-center gap-1 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-8 w-8 flex items-center justify-center border border-input rounded-md hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Next
-              <FiChevronRight size={16} />
+              <FiChevronRight size={14} />
             </button>
           </div>
         </div>
@@ -201,4 +313,3 @@ export default function DocumentViewer({
     </div>
   );
 }
-

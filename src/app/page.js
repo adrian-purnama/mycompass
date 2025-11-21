@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FiDatabase, FiCode, FiCopy, FiDownload, FiChevronLeft, FiChevronRight, FiHardDrive } from 'react-icons/fi';
+import { FiDatabase, FiCode, FiCopy, FiDownload, FiChevronLeft, FiChevronRight, FiHardDrive, FiSettings, FiPlus } from 'react-icons/fi';
 import { hasMasterPassword } from '@/lib/storage';
 import { useConnections } from '@/hooks/useConnections';
 import MasterPasswordModal from '@/components/MasterPasswordModal';
@@ -41,8 +41,8 @@ export default function Home() {
     completedCollections: []
   });
   const loadingCollectionsRef = useRef(false);
-  const [leftSidebarWidth, setLeftSidebarWidth] = useState(320); // Connection Manager width
-  const [middleSidebarWidth, setMiddleSidebarWidth] = useState(256); // Database Tree width
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(280); // Connection Manager width
+  const [middleSidebarWidth, setMiddleSidebarWidth] = useState(240); // Database Tree width
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingMiddle, setIsResizingMiddle] = useState(false);
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
@@ -409,102 +409,95 @@ export default function Home() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-50 dark:bg-black">
+    <div className="h-screen flex flex-col bg-background text-foreground font-sans overflow-hidden">
       {/* Header */}
-      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-black dark:text-zinc-50">My Compass</h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-              MongoDB Management Tool
-            </p>
+      <header className="h-14 border-b border-border bg-card px-4 flex items-center justify-between shrink-0 z-20">
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 bg-primary/10 rounded-lg">
+            <FiDatabase className="text-primary w-5 h-5" />
           </div>
-          {activeConnection && selectedDatabase && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowCloneDialog(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md text-sm font-medium transition-colors"
-              >
-                <FiCopy size={16} />
-                Clone
-              </button>
-              <button
-                onClick={() => setShowExportDialog(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md text-sm font-medium transition-colors"
-              >
-                <FiDownload size={16} />
-                Export
-              </button>
-              <button
-                onClick={handleBackup}
-                disabled={backupLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <FiHardDrive size={16} />
-                {backupLoading ? 'Backing up...' : 'Backup'}
-              </button>
-            </div>
-          )}
+          <div>
+            <h1 className="text-sm font-semibold leading-none">My Compass</h1>
+            <p className="text-[10px] text-muted-foreground mt-0.5">MongoDB Manager</p>
+          </div>
         </div>
+
+        {activeConnection && selectedDatabase && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCloneDialog(true)}
+              className="h-8 px-3 flex items-center gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <FiCopy size={14} />
+              Clone
+            </button>
+            <button
+              onClick={() => setShowExportDialog(true)}
+              className="h-8 px-3 flex items-center gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <FiDownload size={14} />
+              Export
+            </button>
+            <button
+              onClick={handleBackup}
+              disabled={backupLoading}
+              className="h-8 px-3 flex items-center gap-2 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              <FiHardDrive size={14} />
+              {backupLoading ? 'Backing up...' : 'Backup'}
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Connection Manager */}
-        {!isLeftCollapsed ? (
-          <div 
-            className="border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col relative"
-            style={{ width: `${leftSidebarWidth}px`, minWidth: '150px', maxWidth: '600px' }}
-          >
-            <div className="flex items-center justify-between p-2 border-b border-zinc-200 dark:border-zinc-800">
-              <h2 className="text-sm font-semibold text-black dark:text-zinc-50">Connections</h2>
-              <button
-                onClick={() => setIsLeftCollapsed(true)}
-                className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500 dark:text-zinc-400"
-                title="Collapse"
-              >
-                <FiChevronLeft size={16} />
-              </button>
-            </div>
+        <div 
+          className={`border-r border-border bg-muted/30 flex flex-col relative transition-all duration-300 ease-in-out ${isLeftCollapsed ? 'w-10' : ''}`}
+          style={!isLeftCollapsed ? { width: `${leftSidebarWidth}px`, minWidth: '200px', maxWidth: '600px' } : {}}
+        >
+          <div className="h-10 flex items-center justify-between px-3 border-b border-border bg-muted/50">
+            {!isLeftCollapsed && <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Connections</span>}
+            <button
+              onClick={() => setIsLeftCollapsed(!isLeftCollapsed)}
+              className="p-1 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors ml-auto"
+            >
+              {isLeftCollapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
+            </button>
+          </div>
+          
+          {!isLeftCollapsed && (
             <div className="flex-1 overflow-hidden">
               <ConnectionManager masterPassword={masterPassword} onConnect={handleConnect} />
             </div>
-            {/* Resize Handle */}
+          )}
+
+          {/* Resize Handle */}
+          {!isLeftCollapsed && (
             <div
               onMouseDown={handleMouseDownLeft}
-              className="absolute right-0 top-0 bottom-0 w-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-blue-500 transition-colors z-10"
-              style={{ cursor: 'col-resize', pointerEvents: 'auto' }}
-              title="Drag to resize"
+              className="absolute right-0 top-0 bottom-0 w-1 hover:bg-primary/50 cursor-col-resize z-10 transition-colors"
             />
-          </div>
-        ) : (
-          <div className="border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col relative w-8">
-            <button
-              onClick={() => setIsLeftCollapsed(false)}
-              className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors"
-              title="Expand Connections"
-            >
-              <FiChevronRight size={16} />
-            </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Middle Panel - Database Tree */}
-        {!isMiddleCollapsed ? (
-          <div 
-            className="border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col relative"
-            style={{ width: `${middleSidebarWidth}px`, minWidth: '100px', maxWidth: '500px' }}
-          >
-            <div className="flex items-center justify-between p-2 border-b border-zinc-200 dark:border-zinc-800">
-              <h2 className="text-sm font-semibold text-black dark:text-zinc-50">Databases</h2>
-              <button
-                onClick={() => setIsMiddleCollapsed(true)}
-                className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500 dark:text-zinc-400"
-                title="Collapse"
-              >
-                <FiChevronLeft size={16} />
-              </button>
-            </div>
+        <div 
+          className={`border-r border-border bg-card flex flex-col relative transition-all duration-300 ease-in-out ${isMiddleCollapsed ? 'w-10' : ''}`}
+          style={!isMiddleCollapsed ? { width: `${middleSidebarWidth}px`, minWidth: '150px', maxWidth: '500px' } : {}}
+        >
+          <div className="h-10 flex items-center justify-between px-3 border-b border-border bg-card">
+             {!isMiddleCollapsed && <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Explorer</span>}
+            <button
+              onClick={() => setIsMiddleCollapsed(!isMiddleCollapsed)}
+              className="p-1 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors ml-auto"
+            >
+              {isMiddleCollapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
+            </button>
+          </div>
+
+          {!isMiddleCollapsed && (
             <div className="flex-1 overflow-hidden">
               <DatabaseTree
                 connectionString={activeConnection?.connectionString || null}
@@ -512,103 +505,98 @@ export default function Home() {
                 onSelectDatabase={handleSelectDatabase}
               />
             </div>
-            {/* Resize Handle */}
-            <div
-              onMouseDown={handleMouseDownMiddle}
-              className="absolute right-0 top-0 bottom-0 w-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-blue-500 transition-colors z-10"
-              style={{ cursor: 'col-resize', pointerEvents: 'auto' }}
-              title="Drag to resize"
-            />
-          </div>
-        ) : (
-          <div className="border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col relative w-8">
-            <button
-              onClick={() => setIsMiddleCollapsed(false)}
-              className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors"
-              title="Expand Databases"
-            >
-              <FiChevronRight size={16} />
-            </button>
-          </div>
-        )}
-
-        {/* Right Panel - Content Area */}
-        <div className="flex-1 bg-white dark:bg-zinc-900 flex flex-col">
-          {activeConnection && selectedDatabase && (
-            <div className="border-b border-zinc-200 dark:border-zinc-800 flex">
-              <button
-                onClick={() => setActiveTab('documents')}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === 'documents'
-                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-zinc-50'
-                }`}
-              >
-                <FiDatabase size={16} className="inline mr-2" />
-                Documents
-              </button>
-              <button
-                onClick={() => setActiveTab('query')}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === 'query'
-                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-zinc-50'
-                }`}
-              >
-                <FiCode size={16} className="inline mr-2" />
-                MongoDB Query
-              </button>
-              <button
-                onClick={() => setActiveTab('sql')}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === 'sql'
-                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-zinc-50'
-                }`}
-              >
-                <FiCode size={16} className="inline mr-2" />
-                SQL Query
-              </button>
-            </div>
           )}
 
-          <div className="flex-1 overflow-hidden relative min-w-0">
-            {/* Keep all components mounted but hide inactive ones */}
-            <div className={`h-full min-w-0 ${activeTab === 'documents' ? 'block' : 'hidden'}`}>
-              <DocumentViewer
-                key={`documents_${selectedDatabase}_${selectedCollection}`}
-                connectionString={activeConnection?.connectionString || null}
-                databaseName={selectedDatabase}
-                collectionName={selectedCollection}
-              />
-            </div>
-            <div className={`h-full min-w-0 ${activeTab === 'query' ? 'block' : 'hidden'}`}>
-              <QueryEditor
-                key={`query_${selectedDatabase}_${selectedCollection}`}
-                connectionString={activeConnection?.connectionString || null}
-                databaseName={selectedDatabase}
-                collectionName={selectedCollection}
-              />
-            </div>
-            <div className={`h-full min-w-0 ${activeTab === 'sql' ? 'block' : 'hidden'}`}>
-              <SQLEditor
-                key={`sql_${selectedDatabase}`}
-                connectionString={activeConnection?.connectionString || null}
-                databaseName={selectedDatabase}
-              />
-            </div>
-            {(!activeConnection || !selectedDatabase) && (
-              <div className="h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400">
-                <div className="text-center">
-                  <p>Select a database to view documents or run queries</p>
+          {/* Resize Handle */}
+          {!isMiddleCollapsed && (
+            <div
+              onMouseDown={handleMouseDownMiddle}
+              className="absolute right-0 top-0 bottom-0 w-1 hover:bg-primary/50 cursor-col-resize z-10 transition-colors"
+            />
+          )}
+        </div>
+
+        {/* Right Panel - Content Area */}
+        <div className="flex-1 bg-background flex flex-col min-w-0">
+          {activeConnection && selectedDatabase ? (
+            <>
+              <div className="h-10 border-b border-border flex items-center px-2 gap-1 bg-card">
+                <button
+                  onClick={() => setActiveTab('documents')}
+                  className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                    activeTab === 'documents'
+                      ? 'bg-secondary text-secondary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                >
+                  <FiDatabase size={14} />
+                  Documents
+                </button>
+                <button
+                  onClick={() => setActiveTab('query')}
+                  className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                    activeTab === 'query'
+                      ? 'bg-secondary text-secondary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                >
+                  <FiCode size={14} />
+                  Query
+                </button>
+                <button
+                  onClick={() => setActiveTab('sql')}
+                  className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                    activeTab === 'sql'
+                      ? 'bg-secondary text-secondary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                >
+                  <FiCode size={14} />
+                  SQL
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-hidden relative">
+                <div className={`h-full w-full ${activeTab === 'documents' ? 'block' : 'hidden'}`}>
+                  <DocumentViewer
+                    key={`documents_${selectedDatabase}_${selectedCollection}`}
+                    connectionString={activeConnection?.connectionString || null}
+                    databaseName={selectedDatabase}
+                    collectionName={selectedCollection}
+                  />
+                </div>
+                <div className={`h-full w-full ${activeTab === 'query' ? 'block' : 'hidden'}`}>
+                  <QueryEditor
+                    key={`query_${selectedDatabase}_${selectedCollection}`}
+                    connectionString={activeConnection?.connectionString || null}
+                    databaseName={selectedDatabase}
+                    collectionName={selectedCollection}
+                  />
+                </div>
+                <div className={`h-full w-full ${activeTab === 'sql' ? 'block' : 'hidden'}`}>
+                  <SQLEditor
+                    key={`sql_${selectedDatabase}`}
+                    connectionString={activeConnection?.connectionString || null}
+                    databaseName={selectedDatabase}
+                  />
                 </div>
               </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+              <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-4">
+                <FiDatabase size={32} className="opacity-50" />
+              </div>
+              <h3 className="text-lg font-medium text-foreground">No Database Selected</h3>
+              <p className="text-sm max-w-xs text-center mt-2">
+                Select a database from the explorer to view documents or run queries.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Clone Dialog */}
+      {/* Dialogs */}
       {showCloneDialog && (
         <CloneDialog
           isOpen={showCloneDialog}
@@ -617,7 +605,6 @@ export default function Home() {
         />
       )}
 
-      {/* Export Dialog */}
       {showExportDialog && (
         <ExportDialog
           isOpen={showExportDialog}
@@ -628,7 +615,6 @@ export default function Home() {
         />
       )}
 
-      {/* Backup Progress Modal */}
       <BackupProgressModal
         isOpen={showBackupModal}
         databaseName={selectedDatabase}
@@ -654,14 +640,12 @@ export default function Home() {
               currentDocumentCount: 0,
               totalDocumentCount: 0
             });
-            // Clear stored password and collections
             setBackupPassword(null);
             setSelectedBackupCollections([]);
           }
         }}
       />
 
-      {/* Backup Password Modal */}
       <BackupPasswordModal
         isOpen={showBackupPasswordModal}
         databaseName={selectedDatabase}
@@ -672,7 +656,6 @@ export default function Home() {
         }}
       />
 
-      {/* Backup Selection Modal */}
       <BackupSelectionModal
         isOpen={showBackupSelectionModal}
         databaseName={selectedDatabase}

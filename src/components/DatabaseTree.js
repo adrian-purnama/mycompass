@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FiChevronRight, FiChevronDown, FiDatabase, FiFolder, FiFile } from 'react-icons/fi';
+import { FiChevronRight, FiChevronDown, FiDatabase, FiFolder, FiFile, FiLayers } from 'react-icons/fi';
 
 export default function DatabaseTree({ connectionString, onSelectCollection, onSelectDatabase }) {
   const [databases, setDatabases] = useState([]);
@@ -187,17 +187,19 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
 
   if (!connectionString) {
     return (
-      <div className="p-4 text-center text-zinc-500 dark:text-zinc-400">
-        <p>No connection selected</p>
-        <p className="text-sm mt-2">Connect to a database to view its structure</p>
+      <div className="p-8 text-center text-muted-foreground">
+        <FiDatabase size={32} className="mx-auto mb-3 opacity-20" />
+        <p className="text-sm">No connection selected</p>
+        <p className="text-xs mt-1">Connect to a database to view its structure</p>
       </div>
     );
   }
 
   if (loading && databases.length === 0) {
     return (
-      <div className="p-4 text-center text-zinc-500 dark:text-zinc-400">
-        <p>Loading databases...</p>
+      <div className="p-8 text-center text-muted-foreground">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm">Loading databases...</p>
       </div>
     );
   }
@@ -205,11 +207,11 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
   if (error) {
     return (
       <div className="p-4">
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
+          <p className="text-xs text-destructive">{error}</p>
           <button
             onClick={loadDatabases}
-            className="mt-2 text-sm text-red-600 dark:text-red-400 hover:underline"
+            className="mt-2 text-xs text-destructive hover:underline font-medium"
           >
             Retry
           </button>
@@ -220,15 +222,15 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
 
   if (databases.length === 0) {
     return (
-      <div className="p-4 text-center text-zinc-500 dark:text-zinc-400">
-        <p>No databases found</p>
+      <div className="p-8 text-center text-muted-foreground">
+        <p className="text-sm">No databases found</p>
       </div>
     );
   }
 
   return (
     <div className="h-full overflow-y-auto p-2">
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         {databases.map((dbName) => {
           const isExpanded = expandedDbs.has(dbName);
           const dbCollections = collections[dbName] || [];
@@ -236,17 +238,15 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
           return (
             <div key={dbName} className="select-none">
               <div
-                className="flex items-center gap-1 px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded cursor-pointer group"
+                className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-accent rounded-md cursor-pointer group transition-colors"
                 onClick={() => toggleDatabase(dbName)}
               >
-                {isExpanded ? (
-                  <FiChevronDown className="text-zinc-500 dark:text-zinc-400 flex-shrink-0" />
-                ) : (
-                  <FiChevronRight className="text-zinc-500 dark:text-zinc-400 flex-shrink-0" />
-                )}
-                <FiDatabase className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                <span className="text-muted-foreground group-hover:text-foreground transition-colors">
+                    {isExpanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
+                </span>
+                <FiDatabase size={14} className="text-blue-500" />
                 <span
-                  className="flex-1 text-sm font-medium text-black dark:text-zinc-50"
+                  className="flex-1 text-sm font-medium text-foreground truncate"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDatabaseClick(dbName);
@@ -254,19 +254,20 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
                 >
                   {dbName}
                 </span>
-                <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
                   {dbCollections.length}
                 </span>
               </div>
 
               {isExpanded && (
-                <div className="ml-6 mt-1 space-y-0.5">
+                <div className="ml-4 pl-2 border-l border-border mt-0.5 space-y-0.5">
                   {loading && !collections[dbName] ? (
-                    <div className="px-2 py-1 text-xs text-zinc-400 dark:text-zinc-500">
+                    <div className="px-2 py-1 text-xs text-muted-foreground flex items-center gap-2">
+                      <div className="w-3 h-3 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin" />
                       Loading collections...
                     </div>
                   ) : dbCollections.length === 0 ? (
-                    <div className="px-2 py-1 text-xs text-zinc-400 dark:text-zinc-500">
+                    <div className="px-2 py-1 text-xs text-muted-foreground italic">
                       No collections
                     </div>
                   ) : (
@@ -277,17 +278,17 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
                       return (
                         <div
                           key={coll.name}
-                          className="flex items-center gap-2 px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded cursor-pointer"
+                          className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-md cursor-pointer group transition-colors"
                           onClick={() => handleCollectionClick(dbName, coll.name)}
                         >
-                          <FiFile className="text-zinc-500 dark:text-zinc-400 flex-shrink-0" />
-                          <span className="flex-1 text-sm text-black dark:text-zinc-50">
+                          <FiLayers size={14} className="text-muted-foreground group-hover:text-foreground transition-colors" />
+                          <span className="flex-1 text-sm text-muted-foreground group-hover:text-foreground truncate transition-colors">
                             {coll.name}
                           </span>
                           {isLoadingCount || !hasCount ? (
-                            <div className="w-4 h-4 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin flex-shrink-0" />
+                            <div className="w-3 h-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin flex-shrink-0" />
                           ) : (
-                            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                            <span className="text-[10px] font-mono text-muted-foreground">
                               {coll.count?.toLocaleString() || 0}
                             </span>
                           )}
@@ -304,4 +305,3 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
     </div>
   );
 }
-
