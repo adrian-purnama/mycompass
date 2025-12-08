@@ -19,18 +19,25 @@ export default function SQLEditor({
   const [rowsPerPage] = useState(50); 
   const [viewMode, setViewMode] = useState('table'); // 'table' or 'json'
   const textareaRef = useRef(null);
+  const executingRef = useRef(false);
 
   const executeQuery = async () => {
+    // Prevent concurrent executions
+    if (loading || executingRef.current) {
+      return;
+    }
+
     if (!connectionString || !databaseName) {
       setError("Please select a database first");
       return;
     }
 
-    if (!sqlQuery.trim()) {
+    if (!sqlQuery || !sqlQuery.trim()) {
       setError("Please enter a SQL query");
       return;
     }
 
+    executingRef.current = true;
     setLoading(true);
     setError(null);
     setResults(null);
@@ -57,9 +64,10 @@ export default function SQLEditor({
         setError(result.error || "Query execution failed");
       }
     } catch (error) {
-      setError(error.message);
+      setError(error.message || 'Failed to execute query');
     } finally {
       setLoading(false);
+      executingRef.current = false;
     }
   };
 
@@ -111,7 +119,7 @@ export default function SQLEditor({
             </div>
             <div>
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">SQL Editor</h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">QueryLeaf</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">sqltomango</p>
             </div>
         </div>
         <div className="flex items-center gap-2">

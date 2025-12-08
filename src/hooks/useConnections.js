@@ -8,85 +8,69 @@ import {
   deleteConnection as deleteConnectionStorage,
   getActiveConnectionId,
   setActiveConnectionId,
-  updateLastUsed
+  updateLastUsed,
+  isAuthenticated
 } from '@/lib/storage';
 
-export function useConnections(masterPassword) {
+export function useConnections() {
   const [connections, setConnections] = useState([]);
   const [activeConnectionId, setActiveConnectionIdState] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const loadingRef = useRef(false);
-  const masterPasswordRef = useRef(masterPassword);
 
-  // Update ref when masterPassword changes
-  useEffect(() => {
-    masterPasswordRef.current = masterPassword;
-  }, [masterPassword]);
-
-  // Load connections from storage
-  const loadConnections = useCallback(() => {
+  // Load connections from API
+  const loadConnections = useCallback(async () => {
     // Prevent concurrent calls
     if (loadingRef.current) {
       return;
     }
 
-    const currentPassword = masterPasswordRef.current;
-    if (!currentPassword) {
+    if (!isAuthenticated()) {
       setConnections([]);
+      setActiveConnectionIdState(null);
       return;
     }
 
     loadingRef.current = true;
+    setLoading(true);
     try {
-      const loaded = getConnections(currentPassword);
+      const loaded = await getConnections();
       setConnections(loaded);
       const activeId = getActiveConnectionId();
       setActiveConnectionIdState(activeId);
       setError(null); // Clear errors on success
     } catch (error) {
       console.error('Failed to load connections:', error);
-      // Set a more user-friendly error message
-      if (error.message.includes('Incorrect master password') || error.message.includes('cannot decrypt')) {
-        setError('The password cannot decrypt your saved connections. This usually means the connections were encrypted with a different password. You may need to reset your password and re-add your connections.');
-      } else {
-        setError('Failed to load connections: ' + error.message);
-      }
+      setError('Failed to load connections: ' + error.message);
       setConnections([]); // Clear connections on error
       setActiveConnectionIdState(null); // Clear active connection
     } finally {
       loadingRef.current = false;
+      setLoading(false);
     }
-  }, []); // Empty deps - we use refs to access current values
+  }, []);
 
   useEffect(() => {
-    if (masterPassword) {
-      // Load connections when masterPassword changes
-      // Use setTimeout to ensure it runs after render
-      const timeoutId = setTimeout(() => {
-        loadConnections();
-      }, 0);
-      return () => clearTimeout(timeoutId);
-    } else {
-      setConnections([]);
-      setError(null);
-      setActiveConnectionIdState(null);
-    }
-    // loadConnections is stable (empty deps), so we can safely include it
+    // Load connections when component mounts or when auth state changes
+    const timeoutId = setTimeout(() => {
+      loadConnections();
+    }, 0);
+    return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [masterPassword]);
+  }, []);
 
   // Add a new connection
   const addConnection = useCallback(
-    (connection) => {
-      if (!masterPassword) {
-        setError('Master password required');
+    async (connection) => {
+      if (!isAuthenticated()) {
+        setError('Authentication required');
         return false;
       }
 
       try {
-        addConnectionStorage(connection, masterPassword);
-        loadConnections();
+        await addConnectionStorage(connection);
+        await loadConnections();
         return true;
       } catch (error) {
         setError('Failed to add connection: ' + error.message);
@@ -94,70 +78,76 @@ export function useConnections(masterPassword) {
         return false;
       }
     },
-    [masterPassword, loadConnections]
+    [loadConnections]
   );
 
   // Update an existing connection
   const updateConnection = useCallback(
-    (id, updates) => {
-      if (!masterPassword) {
-        setError('Master password required');
+    async (id, updates) => {
+      if (!isAuthenticated()) {
+        setError('Authentication required');
         return false;
       }
 
       try {
-        const success = updateConnectionStorage(id, updates, masterPassword);
-        if (success) {
-          loadConnections();
-        }
-        return success;
+        await updateConnectionStorage(id, updates);
+        await loadConnections();
+        return true;
       } catch (error) {
         setError('Failed to update connection: ' + error.message);
         console.error(error);
         return false;
       }
     },
-    [masterPassword, loadConnections]
+    [loadConnections]
   );
 
   // Set active connection
   const setActiveConnection = useCallback(
-    (id) => {
+    async (id) => {
       setActiveConnectionId(id);
       setActiveConnectionIdState(id);
-      if (id && masterPassword) {
-        updateLastUsed(id, masterPassword);
-        loadConnections();
+      if (id) {
+        try {
+          // Update lastUsed in the background without blocking
+          updateLastUsed(id).catch(err => console.error('Failed to update last used:', err));
+          // Update local state optimistically to avoid reload
+          setConnections(prev => prev.map(conn => 
+            conn.id === id ? { ...conn, lastUsed: new Date().toISOString() } : conn
+          ));
+        } catch (error) {
+          console.error('Failed to set active connection:', error);
+        }
       }
     },
-    [masterPassword, loadConnections]
+    [] // No dependencies to prevent loops
   );
 
   // Delete a connection
   const deleteConnection = useCallback(
-    (id) => {
-      if (!masterPassword) {
-        setError('Master password required');
+    async (id) => {
+      if (!isAuthenticated()) {
+        setError('Authentication required');
         return false;
       }
 
       try {
-        const success = deleteConnectionStorage(id, masterPassword);
-        if (success) {
-          loadConnections();
-          // If deleted connection was active, clear active connection
-          if (activeConnectionId === id) {
-            setActiveConnection(null);
-          }
+        const wasActive = activeConnectionId === id;
+        await deleteConnectionStorage(id);
+        // If deleted connection was active, clear active connection first
+        if (wasActive) {
+          setActiveConnectionId(null);
+          setActiveConnectionIdState(null);
         }
-        return success;
+        await loadConnections();
+        return true;
       } catch (error) {
         setError('Failed to delete connection: ' + error.message);
         console.error(error);
         return false;
       }
     },
-    [masterPassword, loadConnections, activeConnectionId, setActiveConnection]
+    [loadConnections, activeConnectionId]
   );
 
   // Get active connection object

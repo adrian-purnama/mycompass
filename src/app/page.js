@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FiDatabase, FiCode, FiCopy, FiDownload, FiChevronLeft, FiChevronRight, FiHardDrive, FiSettings, FiPlus } from 'react-icons/fi';
-import { hasMasterPassword } from '@/lib/storage';
+import { FiDatabase, FiCode, FiCopy, FiDownload, FiChevronLeft, FiChevronRight, FiHardDrive, FiSettings, FiPlus, FiLogOut, FiUser } from 'react-icons/fi';
 import { useConnections } from '@/hooks/useConnections';
-import MasterPasswordModal from '@/components/MasterPasswordModal';
+import { useAuth } from '@/hooks/useAuth';
+import AuthModal from '@/components/AuthModal';
 import ConnectionManager from '@/components/ConnectionManager';
 import DatabaseTree from '@/components/DatabaseTree';
 import DocumentViewer from '@/components/DocumentViewer';
@@ -15,14 +15,15 @@ import ExportDialog from '@/components/ExportDialog';
 import BackupProgressModal from '@/components/BackupProgressModal';
 import BackupPasswordModal from '@/components/BackupPasswordModal';
 import BackupSelectionModal from '@/components/BackupSelectionModal';
+import BackupScheduler from '@/components/BackupScheduler';
 
 export default function Home() {
-  const [masterPassword, setMasterPassword] = useState(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const { user, loading: authLoading, isAuthenticated, login, register, logout } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeConnection, setActiveConnection] = useState(null);
   const [selectedDatabase, setSelectedDatabase] = useState(null);
   const [selectedCollection, setSelectedCollection] = useState(null);
-  const [activeTab, setActiveTab] = useState('documents'); // 'documents', 'query', 'sql'
+  const [activeTab, setActiveTab] = useState('documents'); // 'documents', 'query', 'sql', 'scheduler'
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [availableCollections, setAvailableCollections] = useState([]);
@@ -48,17 +49,14 @@ export default function Home() {
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [isMiddleCollapsed, setIsMiddleCollapsed] = useState(false);
 
-  const { connections } = useConnections(masterPassword);
+  const { connections } = useConnections();
 
   useEffect(() => {
-    // Check if master password is needed
-    if (hasMasterPassword()) {
-      setShowPasswordModal(true);
-    } else {
-      // First time - show setup modal
-      setShowPasswordModal(true);
+    // Show auth modal if not authenticated (after loading)
+    if (!authLoading && !isAuthenticated) {
+      setShowAuthModal(true);
     }
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   const loadCollections = useCallback(async () => {
     if (!activeConnection?.connectionString || !selectedDatabase || loadingCollectionsRef.current) {
@@ -112,10 +110,7 @@ export default function Home() {
     }
   }, [backupLoading, backupProgress.progress]);
 
-  const handleUnlock = (password) => {
-    setMasterPassword(password);
-    setShowPasswordModal(false);
-  };
+  // Authentication handled by useAuth hook
 
   const handleConnect = (connection) => {
     setActiveConnection(connection);
@@ -398,12 +393,18 @@ export default function Home() {
     }
   }, [isResizingLeft, isResizingMiddle, leftSidebarWidth, isLeftCollapsed]);
 
-  if (!masterPassword) {
+  // Show auth modal if not authenticated
+  if (!authLoading && !isAuthenticated) {
     return (
-      <MasterPasswordModal
-        isOpen={showPasswordModal}
-        onUnlock={handleUnlock}
-        onClose={() => {}}
+      <AuthModal
+        isOpen={showAuthModal}
+        onLogin={login}
+        onRegister={register}
+        onClose={() => {
+          // Don't allow closing if not authenticated
+          if (!isAuthenticated) return;
+          setShowAuthModal(false);
+        }}
       />
     );
   }
@@ -420,6 +421,24 @@ export default function Home() {
             <h1 className="text-sm font-semibold leading-none">My Compass</h1>
             <p className="text-[10px] text-muted-foreground mt-0.5">MongoDB Manager</p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {user && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mr-2">
+              <FiUser size={14} />
+              <span>{user.email}</span>
+            </div>
+          )}
+          {user && (
+            <button
+              onClick={logout}
+              className="h-8 px-3 flex items-center gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <FiLogOut size={14} />
+              Logout
+            </button>
+          )}
         </div>
 
         {activeConnection && selectedDatabase && (
@@ -444,7 +463,7 @@ export default function Home() {
               className="h-8 px-3 flex items-center gap-2 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               <FiHardDrive size={14} />
-              {backupLoading ? 'Backing up...' : 'Backup'}
+              {backupLoading ? 'Backing up...' : 'Local Backup'}
             </button>
           </div>
         )}
@@ -469,7 +488,7 @@ export default function Home() {
           
           {!isLeftCollapsed && (
             <div className="flex-1 overflow-hidden">
-              <ConnectionManager masterPassword={masterPassword} onConnect={handleConnect} />
+              <ConnectionManager onConnect={handleConnect} />
             </div>
           )}
 
@@ -518,81 +537,100 @@ export default function Home() {
 
         {/* Right Panel - Content Area */}
         <div className="flex-1 bg-background flex flex-col min-w-0">
-          {activeConnection && selectedDatabase ? (
-            <>
-              <div className="h-10 border-b border-border flex items-center px-2 gap-1 bg-card">
-                <button
-                  onClick={() => setActiveTab('documents')}
-                  className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                    activeTab === 'documents'
-                      ? 'bg-secondary text-secondary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                  }`}
-                >
-                  <FiDatabase size={14} />
-                  Documents
-                </button>
-                <button
-                  onClick={() => setActiveTab('query')}
-                  className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                    activeTab === 'query'
-                      ? 'bg-secondary text-secondary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                  }`}
-                >
-                  <FiCode size={14} />
-                  Query
-                </button>
-                <button
-                  onClick={() => setActiveTab('sql')}
-                  className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                    activeTab === 'sql'
-                      ? 'bg-secondary text-secondary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                  }`}
-                >
-                  <FiCode size={14} />
-                  SQL
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-hidden relative">
-                <div className={`h-full w-full ${activeTab === 'documents' ? 'block' : 'hidden'}`}>
-                  <DocumentViewer
-                    key={`documents_${selectedDatabase}_${selectedCollection}`}
-                    connectionString={activeConnection?.connectionString || null}
-                    databaseName={selectedDatabase}
-                    collectionName={selectedCollection}
-                  />
-                </div>
-                <div className={`h-full w-full ${activeTab === 'query' ? 'block' : 'hidden'}`}>
-                  <QueryEditor
-                    key={`query_${selectedDatabase}_${selectedCollection}`}
-                    connectionString={activeConnection?.connectionString || null}
-                    databaseName={selectedDatabase}
-                    collectionName={selectedCollection}
-                  />
-                </div>
-                <div className={`h-full w-full ${activeTab === 'sql' ? 'block' : 'hidden'}`}>
-                  <SQLEditor
-                    key={`sql_${selectedDatabase}`}
-                    connectionString={activeConnection?.connectionString || null}
-                    databaseName={selectedDatabase}
-                  />
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-              <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-4">
-                <FiDatabase size={32} className="opacity-50" />
-              </div>
-              <h3 className="text-lg font-medium text-foreground">No Database Selected</h3>
-              <p className="text-sm max-w-xs text-center mt-2">
-                Select a database from the explorer to view documents or run queries.
-              </p>
+          <>
+            <div className="h-10 border-b border-border flex items-center px-2 gap-1 bg-card">
+              {activeConnection && selectedDatabase && (
+                <>
+                  <button
+                    onClick={() => setActiveTab('documents')}
+                    className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                      activeTab === 'documents'
+                        ? 'bg-secondary text-secondary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    }`}
+                  >
+                    <FiDatabase size={14} />
+                    Documents
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('query')}
+                    className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                      activeTab === 'query'
+                        ? 'bg-secondary text-secondary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    }`}
+                  >
+                    <FiCode size={14} />
+                    Query
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('sql')}
+                    className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                      activeTab === 'sql'
+                        ? 'bg-secondary text-secondary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    }`}
+                  >
+                    <FiCode size={14} />
+                    SQL
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setActiveTab('scheduler')}
+                className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                  activeTab === 'scheduler'
+                    ? 'bg-secondary text-secondary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                }`}
+              >
+                <FiHardDrive size={14} />
+                Scheduler
+              </button>
             </div>
-          )}
+
+            <div className="flex-1 overflow-hidden relative">
+              {activeTab === 'scheduler' ? (
+                <BackupScheduler />
+              ) : activeConnection && selectedDatabase ? (
+                <>
+                  <div className={`h-full w-full ${activeTab === 'documents' ? 'block' : 'hidden'}`}>
+                    <DocumentViewer
+                      key={`documents_${selectedDatabase}_${selectedCollection}`}
+                      connectionString={activeConnection?.connectionString || null}
+                      databaseName={selectedDatabase}
+                      collectionName={selectedCollection}
+                    />
+                  </div>
+                  <div className={`h-full w-full ${activeTab === 'query' ? 'block' : 'hidden'}`}>
+                    <QueryEditor
+                      key={`query_${selectedDatabase}_${selectedCollection}`}
+                      connectionString={activeConnection?.connectionString || null}
+                      databaseName={selectedDatabase}
+                      collectionName={selectedCollection}
+                    />
+                  </div>
+                  <div className={`h-full w-full ${activeTab === 'sql' ? 'block' : 'hidden'}`}>
+                    <SQLEditor
+                      key={`sql_${selectedDatabase}`}
+                      connectionString={activeConnection?.connectionString || null}
+                      databaseName={selectedDatabase}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+                  <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-4">
+                    <FiDatabase size={32} className="opacity-50" />
+                  </div>
+                  <h3 className="text-lg font-medium text-foreground">No Database Selected</h3>
+                  <p className="text-sm max-w-xs text-center mt-2">
+                    Select a database from the explorer to view documents or run queries.
+                  </p>
+                </div>
+              )}
+            </div>
+          </>
         </div>
       </div>
 

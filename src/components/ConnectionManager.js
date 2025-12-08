@@ -5,7 +5,7 @@ import { FiPlus, FiEdit2, FiTrash2, FiDatabase, FiChevronRight } from 'react-ico
 import { useConnections } from '@/hooks/useConnections';
 import ConnectionForm from './ConnectionForm';
 
-export default function ConnectionManager({ masterPassword, onConnect }) {
+export default function ConnectionManager({ onConnect }) {
   const {
     connections,
     activeConnectionId,
@@ -14,7 +14,7 @@ export default function ConnectionManager({ masterPassword, onConnect }) {
     deleteConnection,
     setActiveConnection,
     error
-  } = useConnections(masterPassword);
+  } = useConnections();
 
   const [showForm, setShowForm] = useState(false);
   const [editingConnection, setEditingConnection] = useState(null);
@@ -33,17 +33,9 @@ export default function ConnectionManager({ masterPassword, onConnect }) {
   const handleSave = async (connectionData) => {
     try {
       if (connectionData.id) {
-        const success = updateConnection(connectionData.id, connectionData);
-        if (!success) {
-          console.error('Failed to update connection');
-          return;
-        }
+        await updateConnection(connectionData.id, connectionData);
       } else {
-        const success = addConnection(connectionData);
-        if (!success) {
-          console.error('Failed to add connection');
-          return;
-        }
+        await addConnection(connectionData);
       }
       setShowForm(false);
       setEditingConnection(null);
@@ -57,8 +49,13 @@ export default function ConnectionManager({ masterPassword, onConnect }) {
       return;
     }
     setDeletingId(id);
-    deleteConnection(id);
-    setDeletingId(null);
+    try {
+      await deleteConnection(id);
+    } catch (error) {
+      console.error('Error deleting connection:', error);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleConnect = (connection) => {
