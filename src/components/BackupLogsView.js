@@ -122,9 +122,17 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
     }
   };
 
-  const getScheduleName = (scheduleId) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
-    return schedule ? `${schedule.databaseName}` : scheduleId;
+  const getScheduleName = (log) => {
+    // Use connection name and database name from log if available
+    if (log.connectionName && log.databaseName) {
+      return `${log.connectionName} / ${log.databaseName}`;
+    }
+    // Fallback to schedule lookup
+    const schedule = schedules.find(s => s.id === log.scheduleId);
+    if (schedule) {
+      return schedule.connectionName ? `${schedule.connectionName} / ${schedule.databaseName}` : schedule.databaseName;
+    }
+    return log.scheduleId;
   };
 
   return (
@@ -144,7 +152,7 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
               <option value="">All Schedules</option>
               {schedules.map(s => (
                 <option key={s.id} value={s.id}>
-                  {s.databaseName}
+                  {s.connectionName ? `${s.connectionName} / ${s.databaseName}` : s.databaseName}
                 </option>
               ))}
             </select>
@@ -252,7 +260,7 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground">
-                      {getScheduleName(log.scheduleId)}
+                      {getScheduleName(log)}
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground">
                       {new Date(log.startedAt).toLocaleString()}

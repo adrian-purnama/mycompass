@@ -83,6 +83,8 @@ export async function GET(request) {
     const formattedLogs = logs.map(log => ({
       id: log._id.toString(),
       scheduleId: log.scheduleId.toString(),
+      connectionName: log.connectionName || 'Unknown Connection',
+      databaseName: log.databaseName || 'Unknown Database',
       status: log.status,
       startedAt: log.startedAt,
       completedAt: log.completedAt,

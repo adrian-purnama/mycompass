@@ -41,6 +41,8 @@ export async function executeBackup(scheduleId) {
   const logEntry = {
     scheduleId: new ObjectId(scheduleId),
     userId: schedule.userId,
+    connectionName: connection.displayName, // Store connection name for display
+    databaseName: schedule.databaseName, // Store database name for display
     status: 'running',
     startedAt: new Date(),
     collectionsBackedUp: [],
@@ -98,15 +100,17 @@ export async function executeBackup(scheduleId) {
       compressionOptions: { level: 9 } 
     });
 
-    // Generate filename
+    // Generate filename with connection name and database name
     const now = new Date();
     const dateTimeStr = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const fileName = `backup_${schedule.databaseName}_${dateTimeStr}.zip`;
+    // Sanitize connection name for filename (remove special characters)
+    const sanitizedConnectionName = connection.displayName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `backup_${sanitizedConnectionName}_${schedule.databaseName}_${dateTimeStr}.zip`;
 
-    // Upload to Google Drive - create folder structure: backup/databaseName
+    // Upload to Google Drive - create folder structure: backup/connectionName/databaseName
     // The "backup" folder will be created automatically if it doesn't exist
-    // All backups will go into this folder, organized by database name
-    const folderName = `backup/${schedule.databaseName}`;
+    // All backups will go into this folder, organized by connection and database name
+    const folderName = `backup/${connection.displayName}/${schedule.databaseName}`;
     const uploadResult = await uploadFile(
       schedule.userId,
       zipBuffer,
