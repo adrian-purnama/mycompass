@@ -20,6 +20,11 @@
     FROM node:20 AS runner
     WORKDIR /app
     
+    # Set timezone to Asia/Jakarta
+ENV TZ=Asia/Jakarta
+RUN apt-get update && apt-get install -y tzdata >/dev/null 2>&1
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
     RUN apt-get update && apt-get install -y cron curl && rm -rf /var/lib/apt/lists/*
     
     ENV NODE_ENV=production
