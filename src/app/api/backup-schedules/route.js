@@ -233,17 +233,22 @@ export async function POST(request) {
 function calculateNextRun(schedule) {
   const now = new Date();
   const currentDay = now.getDay();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const currentHours = now.getHours();
+  const currentMinutes = now.getMinutes();
+  const currentTimeInMinutes = currentHours * 60 + currentMinutes;
 
   const days = schedule.days || [];
   const times = schedule.times || [];
 
-  // Sort times
-  const sortedTimes = [...times].sort();
+  // Convert times to minutes for proper comparison and sort
+  const timesInMinutes = times.map(time => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return { time, minutes: hours * 60 + minutes };
+  }).sort((a, b) => a.minutes - b.minutes);
 
   // Check if there's a time later today
-  for (const time of sortedTimes) {
-    if (days.includes(currentDay) && time > currentTime) {
+  for (const { time, minutes: timeInMinutes } of timesInMinutes) {
+    if (days.includes(currentDay) && timeInMinutes > currentTimeInMinutes) {
       const [hours, minutes] = time.split(':').map(Number);
       const nextRun = new Date(now);
       nextRun.setHours(hours, minutes, 0, 0);
@@ -254,8 +259,9 @@ function calculateNextRun(schedule) {
   // Find next day with scheduled times
   for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
     const checkDay = (currentDay + dayOffset) % 7;
-    if (days.includes(checkDay) && sortedTimes.length > 0) {
-      const [hours, minutes] = sortedTimes[0].split(':').map(Number);
+    if (days.includes(checkDay) && timesInMinutes.length > 0) {
+      const firstTime = timesInMinutes[0].time;
+      const [hours, minutes] = firstTime.split(':').map(Number);
       const nextRun = new Date(now);
       nextRun.setDate(nextRun.getDate() + dayOffset);
       nextRun.setHours(hours, minutes, 0, 0);
