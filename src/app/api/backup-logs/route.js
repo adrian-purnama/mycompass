@@ -94,6 +94,8 @@ export async function GET(request) {
       filePath: log.filePath,
       error: log.error,
       retentionExpiresAt: log.retentionExpiresAt,
+      deletedAt: log.deletedAt,
+      deletedReason: log.deletedReason,
     }));
 
     return NextResponse.json({

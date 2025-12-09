@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FiRefreshCw, FiCheckCircle, FiXCircle, FiClock, FiTrash2, FiExternalLink } from 'react-icons/fi';
+import { FiRefreshCw, FiCheckCircle, FiXCircle, FiClock, FiTrash2, FiExternalLink, FiMinusCircle, FiX, FiAlertCircle } from 'react-icons/fi';
 
 export default function BackupLogsView({ schedules, selectedScheduleId, onSelectSchedule }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [logToDelete, setLogToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [filters, setFilters] = useState({
     scheduleId: selectedScheduleId || '',
     status: '',
@@ -67,16 +70,22 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
     }
   }, [selectedScheduleId]);
 
-  const handleDelete = async (logId, filePath) => {
-    if (!confirm('Delete this backup log and file?')) {
-      return;
-    }
+  const handleDelete = (log) => {
+    setLogToDelete(log);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!logToDelete) return;
 
     const token = localStorage.getItem('auth_token');
     if (!token) return;
 
+    setDeleting(true);
+    setError(null);
+
     try {
-      const response = await fetch(`/api/backup-logs/${logId}`, {
+      const response = await fetch(`/api/backup-logs/${logToDelete.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -85,13 +94,23 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
 
       const result = await response.json();
       if (result.success) {
+        setShowDeleteModal(false);
+        setLogToDelete(null);
         await loadLogs();
       } else {
-        alert(result.error || 'Failed to delete log');
+        setError(result.error || 'Failed to delete log');
       }
     } catch (error) {
-      alert(error.message || 'Failed to delete log');
+      setError(error.message || 'Failed to delete log');
+    } finally {
+      setDeleting(false);
     }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setLogToDelete(null);
+    setError(null);
   };
 
   const formatDuration = (ms) => {
@@ -117,6 +136,8 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
         return <FiXCircle size={18} className="text-red-600" />;
       case 'running':
         return <FiClock size={18} className="text-blue-600 animate-spin" />;
+      case 'deleted':
+        return <FiMinusCircle size={18} className="text-orange-600" />;
       default:
         return <FiClock size={18} className="text-gray-400" />;
     }
@@ -170,6 +191,7 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
               <option value="success">Success</option>
               <option value="error">Error</option>
               <option value="running">Running</option>
+              <option value="deleted">Deleted</option>
             </select>
           </div>
           <div>
@@ -254,9 +276,14 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-accent/50 border-b border-border">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(log.status)}
-                        <span className="text-xs font-medium capitalize">{log.status}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(log.status)}
+                          <span className="text-xs font-medium capitalize">{log.status}</span>
+                        </div>
+                        {log.status === 'deleted' && log.deletedReason && (
+                          <span className="text-xs text-muted-foreground italic">{log.deletedReason}</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground">
@@ -276,7 +303,7 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {log.filePath && log.status === 'success' && (
+                        {log.filePath && log.status === 'success' && !log.deletedAt && (
                           <a
                             href={`https://drive.google.com/file/d/${log.filePath}/view`}
                             target="_blank"
@@ -287,13 +314,15 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
                             <FiExternalLink size={14} />
                           </a>
                         )}
-                        <button
-                          onClick={() => handleDelete(log.id, log.filePath)}
-                          className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded"
-                          title="Delete"
-                        >
-                          <FiTrash2 size={14} />
-                        </button>
+                        {log.status !== 'deleted' && (
+                          <button
+                            onClick={() => handleDelete(log)}
+                            className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded"
+                            title="Delete"
+                          >
+                            <FiTrash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -327,6 +356,88 @@ export default function BackupLogsView({ schedules, selectedScheduleId, onSelect
             </div>
           )}
         </>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && logToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <FiTrash2 size={24} className="text-red-600 dark:text-red-400" />
+                <h2 className="text-2xl font-semibold text-black dark:text-zinc-50">
+                  Delete Backup
+                </h2>
+              </div>
+              <button
+                onClick={cancelDelete}
+                disabled={deleting}
+                className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 disabled:opacity-50"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-700 rounded-lg">
+              <div className="flex items-start gap-3">
+                <FiAlertCircle size={20} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-900 dark:text-red-200 mb-1">
+                    Delete Backup File
+                  </p>
+                  <p className="text-xs text-red-800 dark:text-red-300">
+                    This will delete the backup file from Google Drive. The log entry will remain with a "deleted" status for record keeping.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-4 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                <span className="font-semibold">Schedule:</span> {getScheduleName(logToDelete)}
+              </p>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+                <span className="font-semibold">Started:</span> {new Date(logToDelete.startedAt).toLocaleString()}
+              </p>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+                <span className="font-semibold">Status:</span> {logToDelete.status}
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? (
+                  <>
+                    <FiRefreshCw className="animate-spin" size={16} />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <FiTrash2 size={16} />
+                    Delete File
+                  </>
+                )}
+              </button>
+              <button
+                onClick={cancelDelete}
+                disabled={deleting}
+                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md font-medium transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

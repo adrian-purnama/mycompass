@@ -175,7 +175,7 @@ async function enforceRetentionPolicy(userId, scheduleId, retentionCount) {
   const { db } = await getAppDatabase();
   const logsCollection = db.collection('backup_logs');
 
-  // Find all successful backups for this schedule, sorted by date (newest first)
+  // Find all successful backups for this schedule (not already deleted), sorted by date (newest first)
   const allBackups = await logsCollection
     .find({
       scheduleId: new ObjectId(scheduleId),
@@ -186,17 +186,28 @@ async function enforceRetentionPolicy(userId, scheduleId, retentionCount) {
     .sort({ startedAt: -1 }) // Newest first
     .toArray();
 
-  // If we have more backups than the retention count, delete the oldest ones
+  // If we have more backups than the retention count, mark the oldest ones as deleted
   if (allBackups.length > retentionCount) {
     const backupsToDelete = allBackups.slice(retentionCount); // Get all backups after the retention count
 
-    // Delete old backups from Google Drive and logs
+    // Delete old backups from Google Drive and mark as deleted in logs
     for (const backup of backupsToDelete) {
       try {
+        // Delete file from Google Drive
         if (backup.filePath) {
           await deleteFile(userId, backup.filePath);
         }
-        await logsCollection.deleteOne({ _id: backup._id });
+        // Update log entry status to 'deleted' instead of deleting the record
+        await logsCollection.updateOne(
+          { _id: backup._id },
+          {
+            $set: {
+              status: 'deleted',
+              deletedAt: new Date(),
+              deletedReason: 'Retention policy - exceeded retention count',
+            },
+          }
+        );
       } catch (error) {
         console.error(`Failed to delete old backup ${backup._id}:`, error);
         // Continue with other backups even if one fails

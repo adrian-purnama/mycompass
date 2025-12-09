@@ -71,6 +71,8 @@ export async function GET(request, { params }) {
         filePath: log.filePath,
         error: log.error,
         retentionExpiresAt: log.retentionExpiresAt,
+        deletedAt: log.deletedAt,
+        deletedReason: log.deletedReason,
       },
     });
   } catch (error) {
@@ -120,18 +122,27 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    // Delete file from Google Drive if exists
-    if (log.filePath && log.status === 'success') {
+    // Delete file from Google Drive if exists and not already deleted
+    if (log.filePath && log.status === 'success' && !log.deletedAt) {
       try {
         await deleteFile(user.id, log.filePath);
       } catch (error) {
         console.error('Failed to delete file from Google Drive:', error);
-        // Continue with log deletion even if file deletion fails
+        // Continue with marking as deleted even if file deletion fails
       }
     }
 
-    // Delete log entry
-    await logsCollection.deleteOne({ _id: new ObjectId(id) });
+    // Mark log as deleted instead of actually deleting it
+    await logsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: 'deleted',
+          deletedAt: new Date(),
+          deletedReason: `Deleted by user ${user.email}`,
+        },
+      }
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {
