@@ -29,33 +29,76 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
   const [error, setError] = useState(null);
   const [googleDriveConnected, setGoogleDriveConnected] = useState(false);
 
+  // Helper to normalize time to 24-hour format (HH:MM)
+  const normalizeTime = (time) => {
+    if (!time) return '14:00';
+    // If already in HH:MM format, return as is
+    if (/^\d{2}:\d{2}$/.test(time)) {
+      return time;
+    }
+    // If in HH:MM:SS format, remove seconds
+    if (/^\d{2}:\d{2}:\d{2}$/.test(time)) {
+      return time.substring(0, 5);
+    }
+    // Try to parse and format
+    try {
+      const parts = time.split(':');
+      const hours = parts[0].padStart(2, '0');
+      const minutes = (parts[1] || '00').padStart(2, '0');
+      return `${hours}:${minutes}`;
+    } catch {
+      return '14:00';
+    }
+  };
+
   useEffect(() => {
     checkGoogleDriveStatus();
     if (schedule) {
       // Edit mode - populate form
       setConnectionId(schedule.connectionId);
-      setDatabaseName(schedule.databaseName);
       setSelectedCollections(schedule.collections || []);
       setSelectedDays(schedule.schedule.days || []);
-      setTimes(schedule.schedule.times || ['14:00']);
+      // Normalize times to 24-hour format
+      const normalizedTimes = (schedule.schedule.times || ['14:00']).map(normalizeTime);
+      setTimes(normalizedTimes);
       setRetentionDays(schedule.retentionDays || 7);
       setBackupPassword(''); // Clear password - user must re-enter for security
     } else {
       // New schedule - clear password
       setBackupPassword('');
+      setDatabaseName('');
     }
   }, [schedule]);
 
   useEffect(() => {
-    if (connectionId) {
-      loadDatabases();
+    if (connectionId && connections.length > 0) {
+      // Make sure connections are loaded before trying to load databases
+      const connection = connections.find(c => c.id === connectionId);
+      if (connection) {
+        loadDatabases();
+      }
     } else {
       setDatabases([]);
-      setDatabaseName('');
+      // Only clear databaseName if we're not editing
+      if (!schedule) {
+        setDatabaseName('');
+      }
       setCollections([]);
       setSelectedCollections([]);
     }
-  }, [connectionId]);
+  }, [connectionId, connections]);
+
+  // Set database name after databases are loaded (when editing)
+  useEffect(() => {
+    // Only run when we have a schedule, databases are loaded, and connection matches
+    if (schedule?.databaseName && 
+        databases.length > 0 && 
+        connectionId === schedule.connectionId &&
+        databases.includes(schedule.databaseName)) {
+      // Set the database name from schedule
+      setDatabaseName(schedule.databaseName);
+    }
+  }, [databases, schedule, connectionId]);
 
   useEffect(() => {
     if (connectionId && databaseName) {
@@ -87,8 +130,13 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
   };
 
   const loadDatabases = async () => {
+    if (!connectionId) return;
+    
     const connection = connections.find(c => c.id === connectionId);
-    if (!connection) return;
+    if (!connection) {
+      console.warn('Connection not found:', connectionId);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -102,10 +150,15 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
 
       const result = await response.json();
       if (result.success) {
-        setDatabases(result.databases || []);
+        const databasesList = result.databases || [];
+        setDatabases(databasesList);
+      } else {
+        console.error('Failed to load databases:', result.error);
+        setDatabases([]);
       }
     } catch (error) {
       console.error('Failed to load databases:', error);
+      setDatabases([]);
     } finally {
       setLoading(false);
     }
@@ -153,7 +206,7 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
   };
 
   const addTime = () => {
-    setTimes(prev => [...prev, '14:00']);
+    setTimes(prev => [...prev, '14:00']); // Default to 14:00 (2 PM) in 24-hour format
   };
 
   const removeTime = (index) => {
@@ -163,7 +216,8 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
   const updateTime = (index, value) => {
     setTimes(prev => {
       const newTimes = [...prev];
-      newTimes[index] = value;
+      // Ensure time is in HH:MM format (24-hour)
+      newTimes[index] = normalizeTime(value);
       return newTimes;
     });
   };
@@ -328,7 +382,7 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
               onChange={(e) => setDatabaseName(e.target.value)}
               className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               required
-              disabled={!connectionId || !!schedule}
+              disabled={!connectionId}
             >
               <option value="">Select a database</option>
               {databases.map(db => (
@@ -408,7 +462,7 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-foreground">
-              Backup Times (24-hour format) <span className="text-red-500">*</span>
+              Backup Times (24-hour format, e.g., 21:00) <span className="text-red-500">*</span>
             </label>
             <button
               type="button"
@@ -423,10 +477,71 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
             {times.map((time, index) => (
               <div key={index} className="flex items-center gap-2">
                 <input
-                  type="time"
+                  type="text"
                   value={time}
-                  onChange={(e) => updateTime(index, e.target.value)}
-                  className="px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  onChange={(e) => {
+                    let value = e.target.value;
+                    // Remove any non-digit characters except colon
+                    value = value.replace(/[^\d:]/g, '');
+                    
+                    // Allow empty input
+                    if (value.length === 0) {
+                      setTimes(prev => {
+                        const newTimes = [...prev];
+                        newTimes[index] = '';
+                        return newTimes;
+                      });
+                      return;
+                    }
+                    
+                    // Detect if user is adding (typing) or deleting
+                    const isAdding = value.length > time.length;
+                    
+                    // Only auto-insert colon when adding (typing), not when deleting
+                    if (isAdding && value.length === 2 && !value.includes(':')) {
+                      value = value + ':';
+                    }
+                    
+                    // Limit to 5 characters max (HH:MM format)
+                    if (value.length <= 5) {
+                      // Only do minimal formatting while typing - no validation
+                      if (value.includes(':')) {
+                        const parts = value.split(':');
+                        let hours = parts[0] || '';
+                        let minutes = parts[1] || '';
+                        
+                        // Only limit length - no value validation while typing
+                        if (hours.length > 2) {
+                          hours = hours.slice(0, 2);
+                        }
+                        if (minutes.length > 2) {
+                          minutes = minutes.slice(0, 2);
+                        }
+                        
+                        // Reconstruct preserving the colon
+                        value = hours + ':' + minutes;
+                      }
+                      
+                      // Update state - allow any partial input
+                      setTimes(prev => {
+                        const newTimes = [...prev];
+                        newTimes[index] = value;
+                        return newTimes;
+                      });
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // Only normalize and validate on blur
+                    const normalized = normalizeTime(e.target.value);
+                    setTimes(prev => {
+                      const newTimes = [...prev];
+                      newTimes[index] = normalized;
+                      return newTimes;
+                    });
+                  }}
+                  placeholder="21:00"
+                  pattern="([01]?[0-9]|2[0-3]):[0-5][0-9]"
+                  className="px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary font-mono"
                   required
                 />
                 {times.length > 1 && (
@@ -441,12 +556,15 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
               </div>
             ))}
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Times are in 24-hour format (00:00 to 23:59)
+          </p>
         </div>
 
-        {/* Retention Days */}
+        {/* Retention Count */}
         <div>
           <label className="block text-sm font-medium mb-2 text-foreground">
-            Retention Period (days) <span className="text-red-500">*</span>
+            Retention Period (number of backups) <span className="text-red-500">*</span>
           </label>
           <input
             type="number"
@@ -457,7 +575,7 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
             required
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            Backups older than this will be automatically deleted
+            Number of backups to keep. When a new backup is created, older backups beyond this count will be automatically deleted. (e.g., 3 = keep only the last 3 backups)
           </p>
         </div>
 

@@ -412,62 +412,122 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground font-sans overflow-hidden">
       {/* Header */}
-      <header className="h-14 border-b border-border bg-card px-4 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-3">
-          <div className="p-1.5 bg-primary/10 rounded-lg">
-            <FiDatabase className="text-primary w-5 h-5" />
+      <header className="min-h-14 border-b border-border bg-card px-2 sm:px-4 flex flex-col sm:flex-row items-center shrink-0 z-20 gap-2 sm:gap-0 py-2 sm:py-0">
+        {/* Left: Logo and Title */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <div className="p-1 sm:p-1.5 bg-primary/10 rounded-lg">
+            <FiDatabase className="text-primary w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           <div>
-            <h1 className="text-sm font-semibold leading-none">My Compass</h1>
-            <p className="text-[10px] text-muted-foreground mt-0.5">MongoDB Manager</p>
+            <h1 className="text-xs sm:text-sm font-semibold leading-none">My Compass</h1>
+            <p className="text-[9px] sm:text-[10px] text-muted-foreground mt-0.5 hidden sm:block">MongoDB Manager</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Middle: Navigation Tools */}
+        <div className="flex-1 w-full sm:w-auto flex items-center justify-center gap-1 px-2 sm:px-4 overflow-x-auto scrollbar-hide">
+          <div className="flex items-center gap-1 min-w-max">
+            {activeConnection && selectedDatabase && (
+              <>
+                <button
+                  onClick={() => setActiveTab('documents')}
+                  className={`h-8 px-2 sm:px-3 text-xs font-medium rounded-md transition-all flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
+                    activeTab === 'documents'
+                      ? 'bg-secondary text-secondary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                >
+                  <FiDatabase size={14} />
+                  <span className="hidden sm:inline">Documents</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('query')}
+                  className={`h-8 px-2 sm:px-3 text-xs font-medium rounded-md transition-all flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
+                    activeTab === 'query'
+                      ? 'bg-secondary text-secondary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                >
+                  <FiCode size={14} />
+                  <span className="hidden sm:inline">Query</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('sql')}
+                  className={`h-8 px-2 sm:px-3 text-xs font-medium rounded-md transition-all flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
+                    activeTab === 'sql'
+                      ? 'bg-secondary text-secondary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                >
+                  <FiCode size={14} />
+                  <span className="hidden sm:inline">SQL</span>
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setActiveTab('scheduler')}
+              className={`h-8 px-2 sm:px-3 text-xs font-medium rounded-md transition-all flex items-center gap-1 sm:gap-2 whitespace-nowrap ${
+                activeTab === 'scheduler'
+                  ? 'bg-secondary text-secondary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              }`}
+            >
+              <FiHardDrive size={14} />
+              <span className="hidden sm:inline">Scheduler</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Right: User Name and Logout */}
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {user && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mr-2">
+            <div className="flex items-center gap-1 sm:gap-2 text-xs text-muted-foreground">
               <FiUser size={14} />
-              <span>{user.email}</span>
+              <span className="hidden sm:inline max-w-[120px] md:max-w-none truncate">{user.email}</span>
             </div>
           )}
           {user && (
             <button
               onClick={logout}
-              className="h-8 px-3 flex items-center gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+              className="h-8 px-2 sm:px-3 flex items-center gap-1 sm:gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors whitespace-nowrap"
             >
               <FiLogOut size={14} />
-              Logout
+              <span className="hidden sm:inline">Logout</span>
             </button>
           )}
         </div>
+      </header>
 
-        {activeConnection && selectedDatabase && (
-          <div className="flex items-center gap-2">
+      {/* Action Toolbar */}
+      {activeConnection && selectedDatabase && (
+        <div className="h-auto sm:h-10 border-b border-border bg-muted/30 px-2 sm:px-4 py-2 sm:py-0 flex items-center gap-1 sm:gap-2 shrink-0 overflow-x-auto scrollbar-hide">
+          <div className="flex items-center gap-1 sm:gap-2 min-w-max">
             <button
               onClick={() => setShowCloneDialog(true)}
-              className="h-8 px-3 flex items-center gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+              className="h-7 px-2 sm:px-3 flex items-center gap-1 sm:gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors whitespace-nowrap"
             >
               <FiCopy size={14} />
-              Clone
+              <span className="hidden sm:inline">Clone</span>
             </button>
             <button
               onClick={() => setShowExportDialog(true)}
-              className="h-8 px-3 flex items-center gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+              className="h-7 px-2 sm:px-3 flex items-center gap-1 sm:gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors whitespace-nowrap"
             >
               <FiDownload size={14} />
-              Export
+              <span className="hidden sm:inline">Export</span>
             </button>
             <button
               onClick={handleBackup}
               disabled={backupLoading}
-              className="h-8 px-3 flex items-center gap-2 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="h-7 px-2 sm:px-3 flex items-center gap-1 sm:gap-2 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 whitespace-nowrap"
             >
               <FiHardDrive size={14} />
-              {backupLoading ? 'Backing up...' : 'Local Backup'}
+              <span className="hidden sm:inline">{backupLoading ? 'Backing up...' : 'Local Backup'}</span>
+              <span className="sm:hidden">{backupLoading ? '...' : 'Backup'}</span>
             </button>
           </div>
-        )}
-      </header>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
@@ -537,59 +597,7 @@ export default function Home() {
 
         {/* Right Panel - Content Area */}
         <div className="flex-1 bg-background flex flex-col min-w-0">
-          <>
-            <div className="h-10 border-b border-border flex items-center px-2 gap-1 bg-card">
-              {activeConnection && selectedDatabase && (
-                <>
-                  <button
-                    onClick={() => setActiveTab('documents')}
-                    className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                      activeTab === 'documents'
-                        ? 'bg-secondary text-secondary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                    }`}
-                  >
-                    <FiDatabase size={14} />
-                    Documents
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('query')}
-                    className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                      activeTab === 'query'
-                        ? 'bg-secondary text-secondary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                    }`}
-                  >
-                    <FiCode size={14} />
-                    Query
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('sql')}
-                    className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                      activeTab === 'sql'
-                        ? 'bg-secondary text-secondary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                    }`}
-                  >
-                    <FiCode size={14} />
-                    SQL
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => setActiveTab('scheduler')}
-                className={`h-7 px-3 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                  activeTab === 'scheduler'
-                    ? 'bg-secondary text-secondary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                }`}
-              >
-                <FiHardDrive size={14} />
-                Scheduler
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-hidden relative">
+          <div className="flex-1 overflow-hidden relative">
               {activeTab === 'scheduler' ? (
                 <BackupScheduler />
               ) : activeConnection && selectedDatabase ? (
@@ -629,8 +637,7 @@ export default function Home() {
                   </p>
                 </div>
               )}
-            </div>
-          </>
+          </div>
         </div>
       </div>
 

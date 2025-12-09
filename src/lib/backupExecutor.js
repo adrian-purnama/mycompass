@@ -119,10 +119,6 @@ export async function executeBackup(scheduleId) {
       folderName
     );
 
-    // Calculate retention expiry
-    const retentionExpiresAt = new Date();
-    retentionExpiresAt.setDate(retentionExpiresAt.getDate() + schedule.retentionDays);
-
     // Update log entry with success
     const completedAt = new Date();
     const duration = completedAt.getTime() - logEntry.startedAt.getTime();
@@ -138,12 +134,11 @@ export async function executeBackup(scheduleId) {
           fileSize: zipBuffer.length,
           filePath: uploadResult.fileId,
           fileLink: uploadResult.webViewLink, // Save the web view link
-          retentionExpiresAt,
         },
       }
     );
 
-    // Enforce retention policy
+    // Enforce retention policy - keep only the last N backups
     await enforceRetentionPolicy(schedule.userId, scheduleId, schedule.retentionDays);
 
     return { success: true, logId };
@@ -171,39 +166,41 @@ export async function executeBackup(scheduleId) {
 }
 
 /**
- * Enforce retention policy - delete old backups
+ * Enforce retention policy - keep only the last N backups
  * @param {string} userId - User ID
  * @param {string} scheduleId - Schedule ID
- * @param {number} retentionDays - Retention days
+ * @param {number} retentionCount - Number of backups to keep (e.g., 3 = keep last 3 backups)
  */
-async function enforceRetentionPolicy(userId, scheduleId, retentionDays) {
+async function enforceRetentionPolicy(userId, scheduleId, retentionCount) {
   const { db } = await getAppDatabase();
   const logsCollection = db.collection('backup_logs');
 
-  // Find backups older than retention period
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-
-  const oldBackups = await logsCollection
+  // Find all successful backups for this schedule, sorted by date (newest first)
+  const allBackups = await logsCollection
     .find({
       scheduleId: new ObjectId(scheduleId),
       userId,
       status: 'success',
-      startedAt: { $lt: cutoffDate },
       filePath: { $ne: null },
     })
+    .sort({ startedAt: -1 }) // Newest first
     .toArray();
 
-  // Delete old backups from Google Drive and logs
-  for (const backup of oldBackups) {
-    try {
-      if (backup.filePath) {
-        await deleteFile(userId, backup.filePath);
+  // If we have more backups than the retention count, delete the oldest ones
+  if (allBackups.length > retentionCount) {
+    const backupsToDelete = allBackups.slice(retentionCount); // Get all backups after the retention count
+
+    // Delete old backups from Google Drive and logs
+    for (const backup of backupsToDelete) {
+      try {
+        if (backup.filePath) {
+          await deleteFile(userId, backup.filePath);
+        }
+        await logsCollection.deleteOne({ _id: backup._id });
+      } catch (error) {
+        console.error(`Failed to delete old backup ${backup._id}:`, error);
+        // Continue with other backups even if one fails
       }
-      await logsCollection.deleteOne({ _id: backup._id });
-    } catch (error) {
-      console.error(`Failed to delete old backup ${backup._id}:`, error);
-      // Continue with other backups even if one fails
     }
   }
 }

@@ -143,6 +143,26 @@ export default function BackupScheduler() {
     return days.map(d => dayNames[d]).join(', ');
   };
 
+  const formatTime = (time) => {
+    // Ensure time is in 24-hour format (HH:MM)
+    if (!time) return '';
+    // If time is already in HH:MM format, return as is
+    if (/^\d{2}:\d{2}$/.test(time)) {
+      return time;
+    }
+    // If time is in HH:MM:SS format, remove seconds
+    if (/^\d{2}:\d{2}:\d{2}$/.test(time)) {
+      return time.substring(0, 5);
+    }
+    // Try to parse and format if it's in a different format
+    try {
+      const [hours, minutes] = time.split(':');
+      return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+    } catch {
+      return time;
+    }
+  };
+
   const formatNextRun = (nextRun) => {
     if (!nextRun) return 'N/A';
     const date = new Date(nextRun);
@@ -151,9 +171,31 @@ export default function BackupScheduler() {
     
     if (diff < 0) return 'Overdue';
     if (diff < 60000) return 'In less than a minute';
-    if (diff < 3600000) return `In ${Math.floor(diff / 60000)} minutes`;
-    if (diff < 86400000) return `In ${Math.floor(diff / 3600000)} hours`;
-    return date.toLocaleString();
+    
+    // Calculate hours and minutes
+    const totalMinutes = Math.floor(diff / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    
+    // Format based on time remaining
+    if (hours === 0) {
+      return `In ${minutes}min`;
+    } else if (hours < 24) {
+      if (minutes === 0) {
+        return `In ${hours}hr`;
+      } else {
+        return `In ${hours}hr ${minutes}min`;
+      }
+    } else {
+      // More than 24 hours - show date and time
+      const days = Math.floor(hours / 24);
+      const remainingHours = hours % 24;
+      if (days === 1) {
+        return `In 1 day${remainingHours > 0 ? ` ${remainingHours}hr` : ''}${minutes > 0 ? ` ${minutes}min` : ''}`;
+      } else {
+        return date.toLocaleString();
+      }
+    }
   };
 
   if (showForm) {
@@ -285,13 +327,13 @@ export default function BackupScheduler() {
                             <span className="font-medium">Days:</span> {formatDays(schedule.schedule.days)}
                           </p>
                           <p>
-                            <span className="font-medium">Times:</span> {schedule.schedule.times.join(', ')}
+                            <span className="font-medium">Times:</span> {schedule.schedule.times.map(formatTime).join(', ')}
                           </p>
                           <p>
                             <span className="font-medium">Collections:</span> {schedule.collections.length > 0 ? schedule.collections.join(', ') : 'All'}
                           </p>
                           <p>
-                            <span className="font-medium">Retention:</span> {schedule.retentionDays} day(s)
+                            <span className="font-medium">Retention:</span> Keep last {schedule.retentionDays} backup(s)
                           </p>
                           {schedule.lastRun && (
                             <p>
