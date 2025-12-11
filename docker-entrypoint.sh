@@ -25,20 +25,23 @@ EOF
 
 chmod 0644 /etc/cron.d/backup-cron
 
-# Start cron daemon in foreground mode with logging
+# Start cron daemon (Debian uses 'cron', not 'crond')
 echo "Starting cron daemon..."
-crond -f -l 2 -L /var/log/cron.log &
+cron &
 
 # Wait a moment for cron to start
 sleep 2
 
 # Verify cron is running
-if pgrep -x crond > /dev/null; then
+if pgrep -x cron > /dev/null; then
     echo "Cron daemon started successfully"
     echo "Cron jobs configured:"
     cat /etc/cron.d/backup-cron
 else
     echo "WARNING: Cron daemon failed to start"
+    # Debug: Check if cron is installed
+    which cron || echo "cron command not found in PATH"
+    ls -la /usr/sbin/cron || echo "/usr/sbin/cron not found"
 fi
 
 # Start Next.js application

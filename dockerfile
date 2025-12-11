@@ -25,7 +25,8 @@ ENV TZ=Asia/Jakarta
 RUN apt-get update && apt-get install -y tzdata >/dev/null 2>&1
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-    RUN apt-get update && apt-get install -y cron curl && rm -rf /var/lib/apt/lists/*
+    RUN apt-get update && apt-get install -y cron curl && rm -rf /var/lib/apt/lists/* && \
+        which cron && echo "Cron installed successfully" || (echo "Cron installation failed" && exit 1)
     
     ENV NODE_ENV=production
     ENV PORT=3000
