@@ -11,9 +11,9 @@ import { ObjectId } from 'mongodb';
 async function getUserFromToken(token) {
   if (!token) return null;
 
-  const { db } = await getAppDatabase();
-  const sessionsCollection = db.collection('sessions');
-  const usersCollection = db.collection('users');
+  const { db: appDb } = await getAppDatabase();
+  const sessionsCollection = appDb.collection('sessions');
+  const usersCollection = appDb.collection('users');
 
   const session = await sessionsCollection.findOne({ token });
   if (!session || new Date() > session.expiresAt) {
