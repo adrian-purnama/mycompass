@@ -45,6 +45,18 @@ export async function POST(request) {
       );
     }
 
+    // Check if email is verified
+    if (!user.emailVerified) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Please verify your email address before logging in. Check your email for the verification link.',
+          requiresVerification: true
+        },
+        { status: 403 }
+      );
+    }
+
     // Create session
     const token = generateSessionToken();
     const expiresAt = new Date();
@@ -65,7 +77,8 @@ export async function POST(request) {
       user: {
         id: user._id.toString(),
         email: user.email,
-        username: user.username
+        username: user.username,
+        emailVerified: user.emailVerified || false
       },
       token
     });

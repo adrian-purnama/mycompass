@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FiChevronRight, FiChevronDown, FiDatabase, FiFolder, FiFile, FiLayers } from 'react-icons/fi';
 
-export default function DatabaseTree({ connectionString, onSelectCollection, onSelectDatabase }) {
+export default function DatabaseTree({ connectionString, connectionId, organizationId, onSelectCollection, onSelectDatabase }) {
   const [databases, setDatabases] = useState([]);
   const [expandedDbs, setExpandedDbs] = useState(new Set());
   const [collections, setCollections] = useState({});
@@ -13,42 +13,98 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
   const loadingRef = useRef(false);
 
   const loadDatabases = useCallback(async () => {
-    if (!connectionString || loadingRef.current) return;
+    // Check if we have either a valid connectionString (non-empty) or connectionId
+    const hasConnectionString = connectionString && typeof connectionString === 'string' && connectionString.trim().length > 0;
+    const hasConnectionId = connectionId && organizationId;
+    const hasValidConnection = hasConnectionString || hasConnectionId;
+    
+    if (!hasValidConnection || loadingRef.current) {
+      console.log('DatabaseTree loadDatabases: Skipping - no valid connection or already loading', {
+        hasConnectionString,
+        hasConnectionId,
+        loading: loadingRef.current
+      });
+      return;
+    }
 
     loadingRef.current = true;
     setLoading(true);
     setError(null);
 
     try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+      
+      const body = {};
+      
+      // If connectionString is available and not empty (admin), use it. Otherwise use connectionId (member)
+      if (hasConnectionString) {
+        body.connectionString = connectionString;
+        console.log('DatabaseTree: Using connectionString');
+      } else if (hasConnectionId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+        console.log('DatabaseTree: Using connectionId and organizationId', { connectionId, organizationId });
+      } else {
+        throw new Error('Connection information is missing');
+      }
+
       const response = await fetch('/api/databases', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionString })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
+      console.log('DatabaseTree: API response', { success: result.success, error: result.error, databasesCount: result.databases?.length || 0 });
       if (result.success) {
         setDatabases(result.databases || []);
       } else {
-        setError(result.error || 'Failed to load databases');
+        const errorMsg = result.error || 'Failed to load databases';
+        console.error('DatabaseTree: API error', errorMsg);
+        setError(errorMsg);
       }
     } catch (error) {
+      console.error('DatabaseTree: Exception', error);
       setError(error.message);
     } finally {
       setLoading(false);
       loadingRef.current = false;
     }
-  }, [connectionString]);
+  }, [connectionString, connectionId, organizationId]);
 
   useEffect(() => {
-    if (connectionString) {
+    // Check if we have either a valid connectionString (non-empty) or connectionId
+    // connectionString can be null, undefined, or empty string - all should be treated as "no connection string"
+    const hasConnectionString = connectionString && typeof connectionString === 'string' && connectionString.trim().length > 0;
+    const hasConnectionId = connectionId && organizationId;
+    const hasValidConnection = hasConnectionString || hasConnectionId;
+    
+    console.log('DatabaseTree useEffect:', {
+      connectionString: connectionString ? `"${connectionString.substring(0, 20)}..."` : 'null/empty',
+      connectionId,
+      organizationId,
+      hasConnectionString,
+      hasConnectionId,
+      hasValidConnection
+    });
+    
+    if (hasValidConnection) {
+      console.log('DatabaseTree: Loading databases...');
       loadDatabases();
     } else {
+      console.log('DatabaseTree: No valid connection, clearing data');
       setDatabases([]);
       setCollections({});
       setExpandedDbs(new Set());
     }
-  }, [connectionString, loadDatabases]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionString, connectionId, organizationId]);
 
   const toggleDatabase = async (dbName) => {
     const newExpanded = new Set(expandedDbs);
@@ -65,14 +121,46 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
   };
 
   const loadCollections = useCallback(async (dbName) => {
-    if (!connectionString) return;
+    // Check if we have either a valid connectionString (non-empty) or connectionId
+    const hasConnectionString = connectionString && typeof connectionString === 'string' && connectionString.trim().length > 0;
+    const hasConnectionId = connectionId && organizationId;
+    const hasValidConnection = hasConnectionString || hasConnectionId;
+    
+    if (!hasValidConnection) {
+      console.log('DatabaseTree loadCollections: No valid connection', { hasConnectionString, hasConnectionId });
+      return;
+    }
 
     try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        console.error('DatabaseTree loadCollections: No auth token');
+        return;
+      }
+      
+      const body = {
+        databaseName: dbName,
+        includeCounts: false
+      };
+
+      // If connectionString is available and not empty (admin), use it. Otherwise use connectionId (member)
+      if (hasConnectionString) {
+        body.connectionString = connectionString;
+      } else if (hasConnectionId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+      } else {
+        return;
+      }
+
       // First, get collection names quickly (without counts)
       const response = await fetch('/api/collections', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionString, databaseName: dbName, includeCounts: false })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
@@ -104,15 +192,30 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
           // Fetch counts incrementally (don't await all, update as they come in)
           collectionsNeedingCounts.forEach(async (coll) => {
             try {
+              const token = localStorage.getItem('auth_token');
+              const countBody = {
+                databaseName: dbName,
+                collectionName: coll.name
+              };
+
+              // If connectionString is available and not empty (admin), use it. Otherwise use connectionId (member)
+              if (hasConnectionString) {
+                countBody.connectionString = connectionString;
+              } else if (hasConnectionId) {
+                countBody.connectionId = connectionId;
+                countBody.organizationId = organizationId;
+              } else {
+                return;
+              }
+
               // Fetch count for this collection
               const countResponse = await fetch('/api/collections/count', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  connectionString,
-                  databaseName: dbName,
-                  collectionName: coll.name
-                })
+                headers: { 
+                  'Content-Type': 'application/json',
+                  ...(token && { 'Authorization': `Bearer ${token}` })
+                },
+                body: JSON.stringify(countBody)
               });
               
               const countResult = await countResponse.json();
@@ -169,7 +272,7 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
     } catch (error) {
       console.error('Failed to load collections:', error);
     }
-  }, [connectionString]);
+  }, [connectionString, connectionId, organizationId]);
 
   const handleCollectionClick = (dbName, collectionName) => {
     if (onSelectCollection) {
@@ -183,7 +286,12 @@ export default function DatabaseTree({ connectionString, onSelectCollection, onS
     }
   };
 
-  if (!connectionString) {
+  // Check if we have a valid connection (either connectionString or connectionId)
+  const hasConnectionString = connectionString && typeof connectionString === 'string' && connectionString.trim().length > 0;
+  const hasConnectionId = connectionId && organizationId;
+  const hasValidConnection = hasConnectionString || hasConnectionId;
+
+  if (!hasValidConnection) {
     return (
       <div className="p-8 text-center text-muted-foreground">
         <FiDatabase size={32} className="mx-auto mb-3 opacity-20" />

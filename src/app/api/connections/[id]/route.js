@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAppDatabase } from '@/lib/appdb';
 import { encrypt, decrypt } from '@/lib/encryption';
+import { isOrganizationMember, canManageConnections, canAccessConnection, getUserRoleInOrganization } from '@/lib/permissions';
 import { ObjectId } from 'mongodb';
 
 // Helper to get user from session token
@@ -48,13 +49,32 @@ export async function PUT(request, { params }) {
     const { db } = await getAppDatabase();
     const connectionsCollection = db.collection('connections');
 
-    // Verify connection belongs to user
-    const existing = await connectionsCollection.findOne({ _id: new ObjectId(id), userId: user.id });
+    // Get connection
+    const existing = await connectionsCollection.findOne({ _id: new ObjectId(id) });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'Connection not found' },
         { status: 404 }
       );
+    }
+
+    // Check if user is a member of the organization
+    if (existing.organizationId) {
+      const isMember = await isOrganizationMember(user.id, existing.organizationId.toString());
+      if (!isMember) {
+        return NextResponse.json(
+          { success: false, error: 'You are not a member of this organization' },
+          { status: 403 }
+        );
+      }
+    } else {
+      // Legacy: check if user created it
+      if (existing.userId !== user.id) {
+        return NextResponse.json(
+          { success: false, error: 'Connection not found' },
+          { status: 404 }
+        );
+      }
     }
 
     const update = {
@@ -71,8 +91,13 @@ export async function PUT(request, { params }) {
       update.encryptedConnectionString = encrypt(connectionString, encryptionKey);
     }
 
+    // Build query based on organization or user
+    const query = existing.organizationId
+      ? { _id: new ObjectId(id), organizationId: existing.organizationId }
+      : { _id: new ObjectId(id), userId: user.id };
+
     await connectionsCollection.updateOne(
-      { _id: new ObjectId(id), userId: user.id },
+      query,
       { $set: update }
     );
 
@@ -140,7 +165,57 @@ export async function DELETE(request, { params }) {
     const { db } = await getAppDatabase();
     const connectionsCollection = db.collection('connections');
 
-    const result = await connectionsCollection.deleteOne({ _id: new ObjectId(id), userId: user.id });
+    // Get connection to check organization
+    const existing = await connectionsCollection.findOne({ _id: new ObjectId(id) });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Connection not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if user is a member of the organization
+    if (!existing.organizationId) {
+      // Legacy: check if user created it
+      if (existing.userId !== user.id) {
+        return NextResponse.json(
+          { success: false, error: 'Connection not found' },
+          { status: 404 }
+        );
+      }
+    } else {
+      const isMember = await isOrganizationMember(user.id, existing.organizationId.toString());
+      if (!isMember) {
+        return NextResponse.json(
+          { success: false, error: 'You are not a member of this organization' },
+          { status: 403 }
+        );
+      }
+
+      // Only admins can delete connections
+      const canManage = await canManageConnections(user.id, existing.organizationId.toString());
+      if (!canManage) {
+        return NextResponse.json(
+          { success: false, error: 'Only organization admins can delete connections' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Build query based on organization or user
+    const query = existing.organizationId
+      ? { _id: new ObjectId(id), organizationId: existing.organizationId }
+      : { _id: new ObjectId(id), userId: user.id };
+
+    const result = await connectionsCollection.deleteOne(query);
+
+    // Delete all related permissions when connection is deleted
+    if (result.deletedCount > 0 && existing.organizationId) {
+      const permissionsCollection = db.collection('connection_permissions');
+      await permissionsCollection.deleteMany({
+        connectionId: new ObjectId(id)
+      });
+    }
 
     if (result.deletedCount === 0) {
       return NextResponse.json(

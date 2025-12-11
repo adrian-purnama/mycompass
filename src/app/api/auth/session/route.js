@@ -51,7 +51,8 @@ export async function GET(request) {
       user: {
         id: user._id.toString(),
         email: user.email,
-        username: user.username
+        username: user.username,
+        emailVerified: user.emailVerified || false
       }
     });
   } catch (error) {

@@ -6,7 +6,10 @@ import { FiX, FiCopy, FiDatabase, FiCheckSquare, FiSquare } from 'react-icons/fi
 export default function CloneDialog({
   isOpen,
   onClose,
-  availableConnections
+  availableConnections = [],
+  organizationId,
+  connectionsLoading = false,
+  onRefreshConnections
 }) {
   const [sourceConnectionId, setSourceConnectionId] = useState('');
   const [sourceDatabase, setSourceDatabase] = useState('');
@@ -25,24 +28,45 @@ export default function CloneDialog({
   const [success, setSuccess] = useState(null);
   const [password, setPassword] = useState('');
 
+  // Ensure availableConnections is always an array (define early so it can be used in callbacks)
+  const connections = Array.isArray(availableConnections) ? availableConnections : [];
+
   // Define load functions first (before useEffect hooks that use them)
   const loadSourceDatabases = useCallback(async () => {
-    const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
+    const sourceConnection = connections.find((c) => c.id === sourceConnectionId);
     if (!sourceConnection) return;
 
     setLoadingSourceDatabases(true);
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {};
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (sourceConnection.connectionString) {
+        body.connectionString = sourceConnection.connectionString;
+      } else if (sourceConnectionId && organizationId) {
+        body.connectionId = sourceConnectionId;
+        body.organizationId = organizationId;
+      } else {
+        setError('Connection information is missing');
+        setLoadingSourceDatabases(false);
+        return;
+      }
+
       const response = await fetch('/api/databases', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString: sourceConnection.connectionString
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
       if (result.success) {
         setSourceDatabases(result.databases || []);
+      } else {
+        setError(result.error || 'Failed to load source databases');
       }
     } catch (error) {
       console.error('Failed to load source databases:', error);
@@ -50,21 +74,38 @@ export default function CloneDialog({
     } finally {
       setLoadingSourceDatabases(false);
     }
-  }, [sourceConnectionId, availableConnections]);
+  }, [sourceConnectionId, connections, organizationId]);
 
   const loadSourceCollections = useCallback(async () => {
-    const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
+    const sourceConnection = connections.find((c) => c.id === sourceConnectionId);
     if (!sourceConnection || !sourceDatabase) return;
     
     setLoadingCollections(true);
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        databaseName: sourceDatabase
+      };
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (sourceConnection.connectionString) {
+        body.connectionString = sourceConnection.connectionString;
+      } else if (sourceConnectionId && organizationId) {
+        body.connectionId = sourceConnectionId;
+        body.organizationId = organizationId;
+      } else {
+        setError('Connection information is missing');
+        setLoadingCollections(false);
+        return;
+      }
+
       const response = await fetch('/api/collections', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString: sourceConnection.connectionString,
-          databaseName: sourceDatabase
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
@@ -76,20 +117,36 @@ export default function CloneDialog({
     } finally {
       setLoadingCollections(false);
     }
-  }, [sourceConnectionId, sourceDatabase, availableConnections]);
+  }, [sourceConnectionId, sourceDatabase, connections, organizationId]);
 
   const loadTargetDatabases = useCallback(async () => {
-    const targetConnection = availableConnections.find((c) => c.id === targetConnectionId);
+    const targetConnection = connections.find((c) => c.id === targetConnectionId);
     if (!targetConnection) return;
 
     setLoadingTargetDatabases(true);
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {};
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (targetConnection.connectionString) {
+        body.connectionString = targetConnection.connectionString;
+      } else if (targetConnectionId && organizationId) {
+        body.connectionId = targetConnectionId;
+        body.organizationId = organizationId;
+      } else {
+        setError('Connection information is missing');
+        setLoadingTargetDatabases(false);
+        return;
+      }
+
       const response = await fetch('/api/databases', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString: targetConnection.connectionString
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
@@ -102,7 +159,7 @@ export default function CloneDialog({
     } finally {
       setLoadingTargetDatabases(false);
     }
-  }, [targetConnectionId, availableConnections]);
+  }, [targetConnectionId, connections, organizationId]);
 
   // Load source databases when source connection is selected
   useEffect(() => {
@@ -150,8 +207,35 @@ export default function CloneDialog({
       setError(null);
       setSuccess(null);
       setPassword('');
+      
+      // Refresh connections when dialog opens (with a small delay to ensure state is ready)
+      if (onRefreshConnections && organizationId) {
+        // Use setTimeout to ensure the refresh happens after the component is fully mounted
+        setTimeout(() => {
+          console.log('Refreshing connections on dialog open...');
+          onRefreshConnections();
+        }, 100);
+      }
+      
+      // Log connections for debugging
+      console.log('CloneDialog opened - availableConnections:', availableConnections);
+      console.log('CloneDialog opened - connections:', connections);
+      console.log('CloneDialog opened - connections length:', connections.length);
+      console.log('CloneDialog opened - organizationId:', organizationId);
+      console.log('CloneDialog opened - connectionsLoading:', connectionsLoading);
     }
-  }, [isOpen]);
+  }, [isOpen, organizationId, onRefreshConnections]);
+
+  // Debug: Log availableConnections
+  useEffect(() => {
+    if (isOpen) {
+      console.log('CloneDialog - availableConnections:', availableConnections);
+      console.log('CloneDialog - organizationId:', organizationId);
+      console.log('CloneDialog - connections length:', connections.length);
+      console.log('CloneDialog - connections is array:', Array.isArray(connections));
+      console.log('CloneDialog - connections:', connections);
+    }
+  }, [isOpen, availableConnections, organizationId, connections]);
 
   const toggleCollection = (collectionName) => {
     setSelectedCollections((prev) =>
@@ -192,8 +276,8 @@ export default function CloneDialog({
       return;
     }
 
-    const sourceConnection = availableConnections.find((c) => c.id === sourceConnectionId);
-    const targetConnection = availableConnections.find((c) => c.id === targetConnectionId);
+    const sourceConnection = connections.find((c) => c.id === sourceConnectionId);
+    const targetConnection = connections.find((c) => c.id === targetConnectionId);
     
     if (!sourceConnection) {
       setError('Source connection not found');
@@ -211,17 +295,44 @@ export default function CloneDialog({
     setProgress('Starting clone operation...');
 
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        sourceDatabase,
+        targetDatabase,
+        collectionNames: selectedCollections,
+        password: password.trim(),
+        organizationId
+      };
+
+      // Handle source connection
+      if (sourceConnection.connectionString) {
+        body.sourceConnectionString = sourceConnection.connectionString;
+      } else if (sourceConnectionId && organizationId) {
+        body.sourceConnectionId = sourceConnectionId;
+      } else {
+        setError('Source connection information is missing');
+        setLoading(false);
+        return;
+      }
+
+      // Handle target connection
+      if (targetConnection.connectionString) {
+        body.targetConnectionString = targetConnection.connectionString;
+      } else if (targetConnectionId && organizationId) {
+        body.targetConnectionId = targetConnectionId;
+      } else {
+        setError('Target connection information is missing');
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/clone', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sourceConnectionString: sourceConnection.connectionString,
-          targetConnectionString: targetConnection.connectionString,
-          sourceDatabase,
-          targetDatabase,
-          collectionNames: selectedCollections,
-          password: password.trim()
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
@@ -269,18 +380,54 @@ export default function CloneDialog({
             <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
               Source Connection
             </label>
-            <select
-              value={sourceConnectionId}
-              onChange={(e) => setSourceConnectionId(e.target.value)}
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select source connection</option>
-              {availableConnections.map((conn) => (
-                <option key={conn.id} value={conn.id}>
-                  {conn.displayName}
-                </option>
-              ))}
-            </select>
+            {connectionsLoading ? (
+              <div className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
+                Loading connections...
+              </div>
+            ) : (
+              <>
+                <select
+                  value={sourceConnectionId}
+                  onChange={(e) => setSourceConnectionId(e.target.value)}
+                  className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={connections.length === 0}
+                >
+                  <option value="">Select source connection</option>
+                  {connections.length > 0 ? (
+                    connections.map((conn) => (
+                      <option key={conn.id} value={conn.id}>
+                        {conn.displayName || conn.name || `Connection ${conn.id}`}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No connections available</option>
+                  )}
+                </select>
+                {connections.length === 0 && organizationId && (
+                  <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                    <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                      <strong>Debug Info:</strong> No connections found. availableConnections length: {availableConnections?.length || 0}, connections length: {connections.length}, organizationId: {organizationId || 'none'}
+                    </p>
+                    {onRefreshConnections && (
+                      <button
+                        onClick={() => {
+                          console.log('Manually refreshing connections...');
+                          onRefreshConnections();
+                        }}
+                        className="mt-2 px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Refresh Connections
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!organizationId && (
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    Please select an organization first.
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           <div>
@@ -312,18 +459,54 @@ export default function CloneDialog({
             <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
               Target Connection
             </label>
-            <select
-              value={targetConnectionId}
-              onChange={(e) => setTargetConnectionId(e.target.value)}
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select target connection</option>
-              {availableConnections.map((conn) => (
-                <option key={conn.id} value={conn.id}>
-                  {conn.displayName}
-                </option>
-              ))}
-            </select>
+            {connectionsLoading ? (
+              <div className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
+                Loading connections...
+              </div>
+            ) : (
+              <>
+                <select
+                  value={targetConnectionId}
+                  onChange={(e) => setTargetConnectionId(e.target.value)}
+                  className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={connections.length === 0}
+                >
+                  <option value="">Select target connection</option>
+                  {connections.length > 0 ? (
+                    connections.map((conn) => (
+                      <option key={conn.id} value={conn.id}>
+                        {conn.displayName || conn.name || `Connection ${conn.id}`}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No connections available</option>
+                  )}
+                </select>
+                {connections.length === 0 && organizationId && (
+                  <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                    <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                      <strong>Debug Info:</strong> No connections found. availableConnections length: {availableConnections?.length || 0}, connections length: {connections.length}, organizationId: {organizationId || 'none'}
+                    </p>
+                    {onRefreshConnections && (
+                      <button
+                        onClick={() => {
+                          console.log('Manually refreshing connections...');
+                          onRefreshConnections();
+                        }}
+                        className="mt-2 px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Refresh Connections
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!organizationId && (
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    Please select an organization first.
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           <div>

@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FiPlus, FiEdit2, FiTrash2, FiDatabase, FiChevronRight } from 'react-icons/fi';
 import { useConnections } from '@/hooks/useConnections';
+import { useAuth } from '@/hooks/useAuth';
 import ConnectionForm from './ConnectionForm';
 
-export default function ConnectionManager({ onConnect }) {
+export default function ConnectionManager({ onConnect, organizationId }) {
+  const { user } = useAuth();
+  const [userRole, setUserRole] = useState(null);
   const {
     connections,
     activeConnectionId,
@@ -14,11 +17,44 @@ export default function ConnectionManager({ onConnect }) {
     deleteConnection,
     setActiveConnection,
     error
-  } = useConnections();
+  } = useConnections(organizationId);
 
   const [showForm, setShowForm] = useState(false);
   const [editingConnection, setEditingConnection] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+
+  // Fetch user role in organization
+  useEffect(() => {
+    if (!user || !organizationId) {
+      setUserRole(null);
+      return;
+    }
+
+    const fetchUserRole = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) return;
+
+        const response = await fetch('/api/organizations', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          const org = result.organizations.find(o => o.id === organizationId);
+          setUserRole(org?.role || null);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user role:', error);
+      }
+    };
+
+    fetchUserRole();
+  }, [user, organizationId]);
+
+  const isAdmin = userRole === 'admin';
 
   const handleAdd = () => {
     setEditingConnection(null);
@@ -74,6 +110,7 @@ export default function ConnectionManager({ onConnect }) {
           setShowForm(false);
           setEditingConnection(null);
         }}
+        userRole={userRole}
       />
     );
   }
@@ -82,13 +119,15 @@ export default function ConnectionManager({ onConnect }) {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Saved Connections</h2>
-        <button
-          onClick={handleAdd}
-          className="flex items-center gap-1.5 px-2 py-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium transition-colors"
-        >
-          <FiPlus size={12} />
-          Add
-        </button>
+        {isAdmin && (
+          <button
+            onClick={handleAdd}
+            className="flex items-center gap-1.5 px-2 py-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium transition-colors"
+          >
+            <FiPlus size={12} />
+            Add
+          </button>
+        )}
       </div>
 
       {error && (
@@ -125,9 +164,16 @@ export default function ConnectionManager({ onConnect }) {
                         {connection.displayName}
                       </h3>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate font-mono pl-8">
-                      {connection.connectionString.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}
-                    </p>
+                    {isAdmin && connection.connectionString && (
+                      <p className="text-xs text-muted-foreground truncate font-mono pl-8">
+                        {connection.connectionString.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}
+                      </p>
+                    )}
+                    {!isAdmin && (
+                      <p className="text-xs text-muted-foreground pl-8 italic">
+                        Connection string hidden
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -149,23 +195,25 @@ export default function ConnectionManager({ onConnect }) {
                       'Connect'
                     )}
                   </button>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                        onClick={() => handleEdit(connection)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
-                        title="Edit"
-                    >
-                        <FiEdit2 size={12} />
-                    </button>
-                    <button
-                        onClick={() => handleDelete(connection.id)}
-                        disabled={deletingId === connection.id}
-                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
-                        title="Delete"
-                    >
-                        <FiTrash2 size={12} />
-                    </button>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                          onClick={() => handleEdit(connection)}
+                          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                          title="Edit"
+                      >
+                          <FiEdit2 size={12} />
+                      </button>
+                      <button
+                          onClick={() => handleDelete(connection.id)}
+                          disabled={deletingId === connection.id}
+                          className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
+                          title="Delete"
+                      >
+                          <FiTrash2 size={12} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

@@ -3,13 +3,15 @@
 import { useState, useEffect } from 'react';
 import { FiX } from 'react-icons/fi';
 
-export default function ConnectionForm({ connection, onSave, onCancel, onTest }) {
+export default function ConnectionForm({ connection, onSave, onCancel, onTest, userRole }) {
   const [displayName, setDisplayName] = useState(connection?.displayName || '');
   const [connectionString, setConnectionString] = useState(connection?.connectionString || '');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  
+  const isAdmin = userRole === 'admin';
 
   // Update form state when connection prop changes
   useEffect(() => {
@@ -34,9 +36,13 @@ export default function ConnectionForm({ connection, onSave, onCancel, onTest })
     setTestResult(null);
 
     try {
+      const token = localStorage.getItem('auth_token');
       const response = await fetch('/api/connect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
         body: JSON.stringify({ connectionString })
       });
 
@@ -73,6 +79,43 @@ export default function ConnectionForm({ connection, onSave, onCancel, onTest })
       setSaving(false);
     }
   };
+
+  // Members cannot edit connections
+  if (!isAdmin) {
+    return (
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-black dark:text-zinc-50">
+            Connection Management
+          </h3>
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              <FiX size={20} />
+            </button>
+          )}
+        </div>
+        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+          <p className="text-sm text-yellow-900 dark:text-yellow-200">
+            Only organization admins can create and edit connections. Please contact your organization administrator.
+          </p>
+        </div>
+        {onCancel && (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md font-medium transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">

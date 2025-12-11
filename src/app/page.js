@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FiDatabase, FiCode, FiCopy, FiDownload, FiChevronLeft, FiChevronRight, FiHardDrive, FiSettings, FiPlus, FiLogOut, FiUser } from 'react-icons/fi';
+import { FiDatabase, FiCode, FiCopy, FiDownload, FiChevronLeft, FiChevronRight, FiHardDrive, FiSettings, FiPlus, FiLogOut, FiUser, FiUsers } from 'react-icons/fi';
 import { useConnections } from '@/hooks/useConnections';
 import { useAuth } from '@/hooks/useAuth';
 import AuthModal from '@/components/AuthModal';
@@ -16,10 +16,30 @@ import BackupProgressModal from '@/components/BackupProgressModal';
 import BackupPasswordModal from '@/components/BackupPasswordModal';
 import BackupSelectionModal from '@/components/BackupSelectionModal';
 import BackupScheduler from '@/components/BackupScheduler';
+import OrganizationManager from '@/components/OrganizationManager';
+import EmailVerificationModal from '@/components/EmailVerificationModal';
+import CreateOrganizationModal from '@/components/CreateOrganizationModal';
+import OrganizationSelector from '@/components/OrganizationSelector';
+import OrganizationSettingsWrapper from '@/components/OrganizationSettingsWrapper';
+import InviteUserModal from '@/components/InviteUserModal';
 
 export default function Home() {
   const { user, loading: authLoading, isAuthenticated, login, register, logout } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState(() => {
+    // Load from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('selectedOrganizationId');
+      return saved || null;
+    }
+    return null;
+  });
+  const [userRole, setUserRole] = useState(null);
+  const [showEmailVerificationModal, setShowEmailVerificationModal] = useState(false);
+  const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showOrgSettingsModal, setShowOrgSettingsModal] = useState(false);
+  const [orgRefreshTrigger, setOrgRefreshTrigger] = useState(0);
   const [activeConnection, setActiveConnection] = useState(null);
   const [selectedDatabase, setSelectedDatabase] = useState(null);
   const [selectedCollection, setSelectedCollection] = useState(null);
@@ -49,29 +69,99 @@ export default function Home() {
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [isMiddleCollapsed, setIsMiddleCollapsed] = useState(false);
 
-  const { connections } = useConnections();
+  const { connections, loadConnections, loading: connectionsLoading } = useConnections(selectedOrganizationId);
+
+  // Save selected organization to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedOrganizationId) {
+      localStorage.setItem('selectedOrganizationId', selectedOrganizationId);
+    } else {
+      localStorage.removeItem('selectedOrganizationId');
+    }
+  }, [selectedOrganizationId]);
 
   useEffect(() => {
     // Show auth modal if not authenticated (after loading)
     if (!authLoading && !isAuthenticated) {
       setShowAuthModal(true);
+      // Clear saved organization when logged out
+      localStorage.removeItem('selectedOrganizationId');
     }
-  }, [authLoading, isAuthenticated]);
+    // Check email verification status
+    if (!authLoading && isAuthenticated && user && !user.emailVerified) {
+      setShowEmailVerificationModal(true);
+    }
+    // Check for invite token redirect after login
+    if (!authLoading && isAuthenticated && user) {
+      const inviteToken = localStorage.getItem('invite_token');
+      if (inviteToken) {
+        localStorage.removeItem('invite_token');
+        window.location.href = `/invite?token=${inviteToken}`;
+      }
+    }
+  }, [authLoading, isAuthenticated, user]);
+
+  // Fetch user role in organization
+  useEffect(() => {
+    if (!user || !selectedOrganizationId) {
+      setUserRole(null);
+      return;
+    }
+
+    const fetchUserRole = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) return;
+
+        const response = await fetch('/api/organizations', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          const org = result.organizations.find(o => o.id === selectedOrganizationId);
+          setUserRole(org?.role || null);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user role:', error);
+        setUserRole(null);
+      }
+    };
+
+    fetchUserRole();
+  }, [user, selectedOrganizationId]);
 
   const loadCollections = useCallback(async () => {
-    if (!activeConnection?.connectionString || !selectedDatabase || loadingCollectionsRef.current) {
+    if ((!activeConnection?.connectionString && !activeConnection?.id) || !selectedDatabase || loadingCollectionsRef.current) {
       return;
     }
 
     loadingCollectionsRef.current = true;
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        databaseName: selectedDatabase
+      };
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (activeConnection.connectionString) {
+        body.connectionString = activeConnection.connectionString;
+      } else if (activeConnection.id && selectedOrganizationId) {
+        body.connectionId = activeConnection.id;
+        body.organizationId = selectedOrganizationId;
+      } else {
+        throw new Error('Connection information is missing');
+      }
+
       const response = await fetch('/api/collections', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString: activeConnection.connectionString,
-          databaseName: selectedDatabase
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
@@ -88,12 +178,12 @@ export default function Home() {
 
   useEffect(() => {
     // Load collections when database/connection changes
-    if (activeConnection?.connectionString && selectedDatabase) {
+    if ((activeConnection?.connectionString || (activeConnection?.id && selectedOrganizationId)) && selectedDatabase) {
       loadCollections();
     } else {
       setAvailableCollections([]);
     }
-  }, [activeConnection?.connectionString, selectedDatabase, loadCollections]);
+  }, [activeConnection?.connectionString, activeConnection?.id, selectedDatabase, selectedOrganizationId, loadCollections]);
 
   // Prevent page close during backup
   useEffect(() => {
@@ -113,6 +203,12 @@ export default function Home() {
   // Authentication handled by useAuth hook
 
   const handleConnect = (connection) => {
+    console.log('handleConnect called with connection:', {
+      id: connection?.id,
+      displayName: connection?.displayName,
+      connectionString: connection?.connectionString ? 'present' : 'missing/empty',
+      connectionStringLength: connection?.connectionString?.length || 0
+    });
     setActiveConnection(connection);
     setSelectedDatabase(null);
     setSelectedCollection(null);
@@ -131,7 +227,12 @@ export default function Home() {
   };
 
   const handleBackup = () => {
-    if (!activeConnection?.connectionString || !selectedDatabase) {
+    if ((!activeConnection?.connectionString && !activeConnection?.id) || !selectedDatabase) {
+      return;
+    }
+
+    if (!selectedOrganizationId) {
+      alert('Please select an organization first');
       return;
     }
 
@@ -233,20 +334,35 @@ export default function Home() {
           let currentCount = 0;
 
           while (hasMore) {
+            const token = localStorage.getItem('auth_token');
+            const body = {
+              databaseName: selectedDatabase,
+              collectionName: collectionName,
+              query: {},
+              options: {
+                limit,
+                skip,
+                sort: { _id: 1 }
+              }
+            };
+
+            // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+            if (activeConnection.connectionString) {
+              body.connectionString = activeConnection.connectionString;
+            } else if (activeConnection.id && selectedOrganizationId) {
+              body.connectionId = activeConnection.id;
+              body.organizationId = selectedOrganizationId;
+            } else {
+              throw new Error('Connection information is missing');
+            }
+
             const documentsResponse = await fetch('/api/documents', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                connectionString: activeConnection.connectionString,
-                databaseName: selectedDatabase,
-                collectionName: collectionName,
-                query: {},
-                options: {
-                  limit,
-                  skip,
-                  sort: { _id: 1 }
-                }
-              })
+              headers: { 
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` })
+              },
+              body: JSON.stringify(body)
             });
 
             const documentsResult = await documentsResponse.json();
@@ -478,28 +594,58 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right: User Name and Logout */}
+        {/* Right: Organization Selector, User Name and Logout */}
         <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-          {user && (
-            <div className="flex items-center gap-1 sm:gap-2 text-xs text-muted-foreground">
-              <FiUser size={14} />
-              <span className="hidden sm:inline max-w-[120px] md:max-w-none truncate">{user.email}</span>
-            </div>
-          )}
-          {user && (
-            <button
-              onClick={logout}
-              className="h-8 px-2 sm:px-3 flex items-center gap-1 sm:gap-2 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors whitespace-nowrap"
-            >
-              <FiLogOut size={14} />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+          {user && isAuthenticated && (
+            <>
+              <OrganizationSelector
+                selectedOrganizationId={selectedOrganizationId}
+                onSelectOrganization={(orgId) => {
+                  setSelectedOrganizationId(orgId);
+                  // Clear active connection when switching organizations
+                  setActiveConnection(null);
+                  setSelectedDatabase(null);
+                  setSelectedCollection(null);
+                  // Reload connections for the new organization
+                  if (orgId) {
+                    setTimeout(() => {
+                      loadConnections();
+                    }, 100);
+                  }
+                }}
+                onCreateNew={() => setShowCreateOrgModal(true)}
+                onInvite={() => {
+                  if (selectedOrganizationId) {
+                    setShowInviteModal(true);
+                  }
+                }}
+                onSettings={() => {
+                  if (selectedOrganizationId) {
+                    setShowOrgSettingsModal(true);
+                  }
+                }}
+                refreshTrigger={orgRefreshTrigger}
+              />
+              <div className="h-6 w-px bg-border" />
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <FiUser size={14} />
+                <span className="hidden sm:inline max-w-[120px] md:max-w-none truncate">{user.email}</span>
+              </div>
+              <button
+                onClick={logout}
+                className="h-8 px-2 sm:px-3 flex items-center gap-1.5 text-xs font-medium rounded-md hover:bg-accent hover:text-accent-foreground transition-colors whitespace-nowrap"
+                title="Logout"
+              >
+                <FiLogOut size={14} />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            </>
           )}
         </div>
       </header>
 
       {/* Action Toolbar */}
-      {activeConnection && selectedDatabase && (
+      {activeConnection && selectedDatabase && userRole === 'admin' && (
         <div className="h-auto sm:h-10 border-b border-border bg-muted/30 px-2 sm:px-4 py-2 sm:py-0 flex items-center gap-1 sm:gap-2 shrink-0 overflow-x-auto scrollbar-hide">
           <div className="flex items-center gap-1 sm:gap-2 min-w-max">
             <button
@@ -516,7 +662,7 @@ export default function Home() {
               <FiDownload size={14} />
               <span className="hidden sm:inline">Export</span>
             </button>
-            <button
+            {/* <button
               onClick={handleBackup}
               disabled={backupLoading}
               className="h-7 px-2 sm:px-3 flex items-center gap-1 sm:gap-2 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 whitespace-nowrap"
@@ -524,42 +670,88 @@ export default function Home() {
               <FiHardDrive size={14} />
               <span className="hidden sm:inline">{backupLoading ? 'Backing up...' : 'Local Backup'}</span>
               <span className="sm:hidden">{backupLoading ? '...' : 'Backup'}</span>
-            </button>
+            </button> */}
           </div>
         </div>
       )}
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Connection Manager */}
-        <div 
-          className={`border-r border-border bg-muted/30 flex flex-col relative transition-all duration-300 ease-in-out ${isLeftCollapsed ? 'w-10' : ''}`}
-          style={!isLeftCollapsed ? { width: `${leftSidebarWidth}px`, minWidth: '200px', maxWidth: '600px' } : {}}
-        >
-          <div className="h-10 flex items-center justify-between px-3 border-b border-border bg-muted/50">
-            {!isLeftCollapsed && <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Connections</span>}
-            <button
-              onClick={() => setIsLeftCollapsed(!isLeftCollapsed)}
-              className="p-1 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors ml-auto"
-            >
-              {isLeftCollapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
-            </button>
-          </div>
-          
-          {!isLeftCollapsed && (
-            <div className="flex-1 overflow-hidden">
-              <ConnectionManager onConnect={handleConnect} />
+        {/* Left Sidebar - Organization Manager / Connection Manager */}
+        {selectedOrganizationId ? (
+          <div
+            className={`border-r border-border bg-muted/30 flex flex-col relative transition-all duration-300 ease-in-out ${isLeftCollapsed ? 'w-10' : ''}`}
+            style={!isLeftCollapsed ? { width: `${leftSidebarWidth}px`, minWidth: '200px', maxWidth: '600px' } : {}}
+          >
+            <div className="h-10 flex items-center justify-between px-3 border-b border-border bg-muted/50">
+              {!isLeftCollapsed && <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Connections</span>}
+              <button
+                onClick={() => setIsLeftCollapsed(!isLeftCollapsed)}
+                className="p-1 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors ml-auto"
+              >
+                {isLeftCollapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
+              </button>
             </div>
-          )}
+            
+            {!isLeftCollapsed && (
+              <div className="flex-1 overflow-hidden">
+                <ConnectionManager onConnect={handleConnect} organizationId={selectedOrganizationId} />
+              </div>
+            )}
 
-          {/* Resize Handle */}
-          {!isLeftCollapsed && (
-            <div
-              onMouseDown={handleMouseDownLeft}
-              className="absolute right-0 top-0 bottom-0 w-1 hover:bg-primary/50 cursor-col-resize z-10 transition-colors"
-            />
-          )}
-        </div>
+            {/* Resize Handle */}
+            {!isLeftCollapsed && (
+              <div
+                onMouseDown={handleMouseDownLeft}
+                className="absolute right-0 top-0 bottom-0 w-1 hover:bg-primary/50 cursor-col-resize z-10 transition-colors"
+              />
+            )}
+          </div>
+        ) : (
+          <div
+            className={`border-r border-border bg-muted/30 flex flex-col relative transition-all duration-300 ease-in-out ${isLeftCollapsed ? 'w-10' : ''}`}
+            style={!isLeftCollapsed ? { width: `${leftSidebarWidth}px`, minWidth: '200px', maxWidth: '600px' } : {}}
+          >
+            <div className="h-10 flex items-center justify-between px-3 border-b border-border bg-muted/50">
+              {!isLeftCollapsed && <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Organizations</span>}
+              <button
+                onClick={() => setIsLeftCollapsed(!isLeftCollapsed)}
+                className="p-1 hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors ml-auto"
+              >
+                {isLeftCollapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
+              </button>
+            </div>
+            
+            {!isLeftCollapsed && (
+              <div className="flex-1 overflow-hidden">
+                <OrganizationManager
+                  onSelectOrganization={(orgId) => {
+                    setSelectedOrganizationId(orgId);
+                    // Clear active connection when switching organizations
+                    setActiveConnection(null);
+                    setSelectedDatabase(null);
+                    setSelectedCollection(null);
+                    // Reload connections for the new organization
+                    if (orgId) {
+                      setTimeout(() => {
+                        loadConnections();
+                      }, 100);
+                    }
+                  }}
+                  selectedOrganizationId={selectedOrganizationId}
+                />
+              </div>
+            )}
+
+            {/* Resize Handle */}
+            {!isLeftCollapsed && (
+              <div
+                onMouseDown={handleMouseDownLeft}
+                className="absolute right-0 top-0 bottom-0 w-1 hover:bg-primary/50 cursor-col-resize z-10 transition-colors"
+              />
+            )}
+          </div>
+        )}
 
         {/* Middle Panel - Database Tree */}
         <div 
@@ -580,9 +772,18 @@ export default function Home() {
             <div className="flex-1 overflow-hidden">
               <DatabaseTree
                 connectionString={activeConnection?.connectionString || null}
+                connectionId={activeConnection?.id || null}
+                organizationId={selectedOrganizationId}
                 onSelectCollection={handleSelectCollection}
                 onSelectDatabase={handleSelectDatabase}
               />
+              {/* Debug info */}
+              {process.env.NODE_ENV === 'development' && activeConnection && (
+                <div className="p-2 text-xs text-muted-foreground border-t">
+                  Debug: ID={activeConnection?.id}, Org={selectedOrganizationId}, 
+                  ConnStr={activeConnection?.connectionString ? 'yes' : 'no'}
+                </div>
+              )}
             </div>
           )}
 
@@ -599,13 +800,15 @@ export default function Home() {
         <div className="flex-1 bg-background flex flex-col min-w-0">
           <div className="flex-1 overflow-hidden relative">
               {activeTab === 'scheduler' ? (
-                <BackupScheduler />
+                <BackupScheduler organizationId={selectedOrganizationId} />
               ) : activeConnection && selectedDatabase ? (
                 <>
                   <div className={`h-full w-full ${activeTab === 'documents' ? 'block' : 'hidden'}`}>
                     <DocumentViewer
                       key={`documents_${selectedDatabase}_${selectedCollection}`}
                       connectionString={activeConnection?.connectionString || null}
+                      connectionId={activeConnection?.id || null}
+                      organizationId={selectedOrganizationId}
                       databaseName={selectedDatabase}
                       collectionName={selectedCollection}
                     />
@@ -614,6 +817,8 @@ export default function Home() {
                     <QueryEditor
                       key={`query_${selectedDatabase}_${selectedCollection}`}
                       connectionString={activeConnection?.connectionString || null}
+                      connectionId={activeConnection?.id || null}
+                      organizationId={selectedOrganizationId}
                       databaseName={selectedDatabase}
                       collectionName={selectedCollection}
                     />
@@ -622,6 +827,8 @@ export default function Home() {
                     <SQLEditor
                       key={`sql_${selectedDatabase}`}
                       connectionString={activeConnection?.connectionString || null}
+                      connectionId={activeConnection?.id || null}
+                      organizationId={selectedOrganizationId}
                       databaseName={selectedDatabase}
                     />
                   </div>
@@ -647,6 +854,9 @@ export default function Home() {
           isOpen={showCloneDialog}
           onClose={() => setShowCloneDialog(false)}
           availableConnections={connections}
+          organizationId={selectedOrganizationId}
+          connectionsLoading={connectionsLoading}
+          onRefreshConnections={loadConnections}
         />
       )}
 
@@ -655,6 +865,8 @@ export default function Home() {
           isOpen={showExportDialog}
           onClose={() => setShowExportDialog(false)}
           connectionString={activeConnection?.connectionString}
+          connectionId={activeConnection?.id}
+          organizationId={selectedOrganizationId}
           databaseName={selectedDatabase}
           availableCollections={availableCollections}
         />
@@ -694,12 +906,48 @@ export default function Home() {
       <BackupPasswordModal
         isOpen={showBackupPasswordModal}
         databaseName={selectedDatabase}
+        organizationId={selectedOrganizationId}
         onConfirm={handleBackupPasswordConfirm}
         onCancel={() => {
           setShowBackupPasswordModal(false);
           setBackupPassword(null);
         }}
       />
+
+      <EmailVerificationModal
+        isOpen={showEmailVerificationModal}
+        email={user?.email}
+        onClose={() => setShowEmailVerificationModal(false)}
+      />
+
+      {showCreateOrgModal && (
+        <CreateOrganizationModal
+          onSuccess={() => {
+            setShowCreateOrgModal(false);
+            // Trigger refresh of organization selector
+            setOrgRefreshTrigger(prev => prev + 1);
+          }}
+          onCancel={() => setShowCreateOrgModal(false)}
+        />
+      )}
+
+      {showInviteModal && selectedOrganizationId && (
+        <InviteUserModal
+          organizationId={selectedOrganizationId}
+          onSuccess={() => {
+            setShowInviteModal(false);
+            setOrgRefreshTrigger(prev => prev + 1);
+          }}
+          onCancel={() => setShowInviteModal(false)}
+        />
+      )}
+
+      {showOrgSettingsModal && selectedOrganizationId && (
+        <OrganizationSettingsWrapper
+          organizationId={selectedOrganizationId}
+          onClose={() => setShowOrgSettingsModal(false)}
+        />
+      )}
 
       <BackupSelectionModal
         isOpen={showBackupSelectionModal}

@@ -7,7 +7,8 @@ export default function BackupPasswordModal({
   isOpen,
   onConfirm,
   onCancel,
-  databaseName
+  databaseName,
+  organizationId
 }) {
   const [backupPassword, setBackupPassword] = useState('');
   const [error, setError] = useState('');

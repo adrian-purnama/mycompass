@@ -5,6 +5,8 @@ import { FiChevronLeft, FiChevronRight, FiCopy, FiRefreshCw, FiGrid, FiCode, FiL
 
 export default function DocumentViewer({
   connectionString,
+  connectionId,
+  organizationId,
   databaseName,
   collectionName,
   onRefresh
@@ -18,46 +20,65 @@ export default function DocumentViewer({
   const [viewMode, setViewMode] = useState('table'); // 'table', 'json', 'list'
 
   // Track previous context to detect changes
-  const prevContextRef = useRef({ connectionString, databaseName, collectionName });
+  const prevContextRef = useRef({ connectionString, connectionId, organizationId, databaseName, collectionName });
   
   useEffect(() => {
     const contextChanged = 
       prevContextRef.current.connectionString !== connectionString ||
+      prevContextRef.current.connectionId !== connectionId ||
+      prevContextRef.current.organizationId !== organizationId ||
       prevContextRef.current.databaseName !== databaseName ||
       prevContextRef.current.collectionName !== collectionName;
 
     if (contextChanged) {
       // Context changed - reset to page 1
-      prevContextRef.current = { connectionString, databaseName, collectionName };
+      prevContextRef.current = { connectionString, connectionId, organizationId, databaseName, collectionName };
       setPage(1);
-      if (!connectionString || !databaseName || !collectionName) {
+      const hasConnection = (connectionString && connectionString.trim()) || (connectionId && organizationId);
+      if (!hasConnection || !databaseName || !collectionName) {
         setDocuments([]);
         setTotal(0);
       }
     }
-  }, [connectionString, databaseName, collectionName]);
+  }, [connectionString, connectionId, organizationId, databaseName, collectionName]);
 
   const loadDocuments = useCallback(async () => {
-    if (!connectionString || !databaseName || !collectionName) return;
+    if ((!connectionString && !connectionId) || !databaseName || !collectionName) return;
 
     setLoading(true);
     setError(null);
 
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        databaseName,
+        collectionName,
+        query: {},
+        options: {
+          limit,
+          skip: (page - 1) * limit,
+          sort: { _id: 1 }
+        }
+      };
+
+      // If connectionString is available and not empty (admin), use it. Otherwise use connectionId (member)
+      const hasConnectionString = connectionString && typeof connectionString === 'string' && connectionString.trim().length > 0;
+      if (hasConnectionString) {
+        body.connectionString = connectionString;
+      } else if (connectionId && organizationId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+      } else {
+        return;
+      }
+
       const response = await fetch('/api/documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString,
-          databaseName,
-          collectionName,
-          query: {},
-          options: {
-            limit,
-            skip: (page - 1) * limit,
-            sort: { _id: 1 }
-          }
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
@@ -72,16 +93,17 @@ export default function DocumentViewer({
     } finally {
       setLoading(false);
     }
-  }, [connectionString, databaseName, collectionName, page, limit]);
+  }, [connectionString, connectionId, organizationId, databaseName, collectionName, page, limit]);
 
   // Load documents when context or page changes
   useEffect(() => {
-    if (connectionString && databaseName && collectionName) {
+    const hasConnection = (connectionString && connectionString.trim()) || (connectionId && organizationId);
+    if (hasConnection && databaseName && collectionName) {
       loadDocuments();
     }
     // loadDocuments is memoized with all necessary dependencies, so we don't need it in deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionString, databaseName, collectionName, page]);
+  }, [connectionString, connectionId, organizationId, databaseName, collectionName, page]);
 
   const handleRefresh = () => {
     loadDocuments();
@@ -138,7 +160,12 @@ export default function DocumentViewer({
     return <span className="truncate block max-w-[200px]" title={String(value)}>{String(value)}</span>;
   };
 
-  if (!connectionString || !databaseName || !collectionName) {
+  // Check if we have a valid connection (either connectionString or connectionId)
+  const hasConnectionString = connectionString && typeof connectionString === 'string' && connectionString.trim().length > 0;
+  const hasConnectionId = connectionId && organizationId;
+  const hasValidConnection = hasConnectionString || hasConnectionId;
+
+  if (!hasValidConnection || !databaseName || !collectionName) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
         <div className="text-center">

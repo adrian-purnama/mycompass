@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.1",
     "archiver": "^7.0.1",
     "archiver-zip-encrypted": "^2.0.0",
     "crypto-js": "^4.2.0",

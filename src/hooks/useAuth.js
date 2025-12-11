@@ -82,13 +82,13 @@ export function useAuth() {
         throw new Error(result.error || 'Registration failed');
       }
 
-      // Auto-login after registration
-      return await login(email, password);
+      // Don't auto-login - user needs to verify email first
+      return { message: result.message || 'Registration successful. Please check your email to verify your account.' };
     } catch (error) {
       setError(error.message);
       throw error;
     }
-  }, [login]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {

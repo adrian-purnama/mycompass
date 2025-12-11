@@ -56,6 +56,39 @@ export async function getAppDatabase() {
   await appDb.collection('google_drive_tokens').createIndex({ userId: 1 }, { unique: true });
   await appDb.collection('google_drive_tokens').createIndex({ expiresAt: 1 });
 
+  // Organization indexes
+  await appDb.collection('organizations').createIndex({ createdBy: 1 });
+  await appDb.collection('organizations').createIndex({ name: 1 });
+  
+  // Organization members indexes
+  await appDb.collection('organization_members').createIndex({ organizationId: 1 });
+  await appDb.collection('organization_members').createIndex({ userId: 1 });
+  await appDb.collection('organization_members').createIndex({ organizationId: 1, userId: 1 }, { unique: true });
+  
+  // Email verification indexes
+  await appDb.collection('email_verifications').createIndex({ userId: 1 });
+  await appDb.collection('email_verifications').createIndex({ token: 1 }, { unique: true });
+  await appDb.collection('email_verifications').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  
+  // Organization invitation indexes
+  await appDb.collection('organization_invitations').createIndex({ organizationId: 1 });
+  await appDb.collection('organization_invitations').createIndex({ email: 1 });
+  await appDb.collection('organization_invitations').createIndex({ token: 1 }, { unique: true });
+  await appDb.collection('organization_invitations').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await appDb.collection('organization_invitations').createIndex({ status: 1 });
+  
+  // Updated user indexes
+  await appDb.collection('users').createIndex({ emailVerified: 1 });
+  
+  // Updated connection indexes
+  await appDb.collection('connections').createIndex({ organizationId: 1 });
+  await appDb.collection('connections').createIndex({ userId: 1, organizationId: 1 });
+  
+  // Connection permissions indexes
+  await appDb.collection('connection_permissions').createIndex({ userId: 1, connectionId: 1 }, { unique: true });
+  await appDb.collection('connection_permissions').createIndex({ connectionId: 1 });
+  await appDb.collection('connection_permissions').createIndex({ organizationId: 1, userId: 1 });
+
   return { client: appDbClient, db: appDb };
 }
 

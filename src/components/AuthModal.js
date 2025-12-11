@@ -10,22 +10,28 @@ export default function AuthModal({ isOpen, onClose, onLogin, onRegister }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    setVerificationSent(false);
 
     try {
       if (mode === 'login') {
         await onLogin(email, password);
+        // Reset form on success
+        setEmail('');
+        setPassword('');
       } else {
         await onRegister(email, username, password);
+        // Show verification message, don't auto-login
+        setVerificationSent(true);
+        setEmail('');
+        setUsername('');
+        setPassword('');
       }
-      // Reset form on success
-      setEmail('');
-      setUsername('');
-      setPassword('');
     } catch (err) {
       setError(err.message || 'An error occurred');
     } finally {
@@ -39,6 +45,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, onRegister }) {
     setEmail('');
     setUsername('');
     setPassword('');
+    setVerificationSent(false);
   };
 
   if (!isOpen) return null;
@@ -120,6 +127,17 @@ export default function AuthModal({ isOpen, onClose, onLogin, onRegister }) {
               </p>
             )}
           </div>
+
+          {verificationSent && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+              <div className="flex items-center gap-2">
+                <FiMail className="text-blue-600 dark:text-blue-400" size={16} />
+                <p className="text-sm text-blue-600 dark:text-blue-400">
+                  Registration successful! Please check your email to verify your account before logging in.
+                </p>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">

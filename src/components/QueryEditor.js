@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { FiPlay, FiCopy, FiX, FiChevronLeft, FiChevronRight, FiList, FiGrid, FiDatabase, FiCode } from 'react-icons/fi';
+import { FiPlay, FiCopy, FiX, FiChevronLeft, FiChevronRight, FiList, FiGrid, FiDatabase, FiCode, FiDownload } from 'react-icons/fi';
 
 export default function QueryEditor({
   connectionString,
+  connectionId,
+  organizationId,
   databaseName,
   collectionName,
   onResults
@@ -20,7 +22,7 @@ export default function QueryEditor({
   const textareaRef = useRef(null);
 
   const executeQuery = async () => {
-    if (!connectionString || !databaseName || !collectionName) {
+    if ((!connectionString && !connectionId) || !databaseName || !collectionName) {
       setError('Please select a database and collection first');
       return;
     }
@@ -39,15 +41,32 @@ export default function QueryEditor({
         return;
       }
 
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        databaseName,
+        collectionName,
+        query: parsedQuery
+      };
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (connectionString) {
+        body.connectionString = connectionString;
+      } else if (connectionId && organizationId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+      } else {
+        setError('Connection information is missing');
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString,
-          databaseName,
-          collectionName,
-          query: parsedQuery
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       const result = await response.json();
@@ -80,6 +99,69 @@ export default function QueryEditor({
   };
 
   const formatResults = (data) => JSON.stringify(data, null, 2);
+
+  const downloadResults = (format = 'json') => {
+    if (!results || results.length === 0) return;
+
+    let content, filename, mimeType;
+
+    if (format === 'json') {
+      content = formatResults(results);
+      filename = `query-results-${databaseName}-${collectionName}-${new Date().toISOString().split('T')[0]}.json`;
+      mimeType = 'application/json';
+    } else if (format === 'csv') {
+      // Convert to CSV
+      if (results.length === 0) return;
+      
+      // Get all unique keys from all documents
+      const allKeys = new Set();
+      results.forEach(doc => {
+        Object.keys(doc).forEach(k => allKeys.add(k));
+      });
+      const headers = Array.from(allKeys).sort((a, b) => {
+        if (a === '_id') return -1;
+        if (b === '_id') return 1;
+        return a.localeCompare(b);
+      });
+
+      // Create CSV rows
+      const csvRows = [];
+      csvRows.push(headers.join(',')); // Header row
+
+      results.forEach(doc => {
+        const row = headers.map(header => {
+          const value = doc[header];
+          if (value === null || value === undefined) return '';
+          if (typeof value === 'object') {
+            // Convert objects/arrays to JSON string and escape quotes
+            return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+          }
+          // Escape quotes and wrap in quotes if contains comma, newline, or quote
+          const stringValue = String(value);
+          if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+          }
+          return stringValue;
+        });
+        csvRows.push(row.join(','));
+      });
+
+      content = csvRows.join('\n');
+      filename = `query-results-${databaseName}-${collectionName}-${new Date().toISOString().split('T')[0]}.csv`;
+      mimeType = 'text/csv';
+    }
+
+    // Create download link
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const getPaginatedResults = useMemo(() => {
     if (!results || !Array.isArray(results)) return [];
@@ -156,7 +238,7 @@ export default function QueryEditor({
           )}
           <button
             onClick={executeQuery}
-            disabled={loading || !connectionString || !databaseName || !collectionName}
+            disabled={loading || (!connectionString && !connectionId) || !databaseName || !collectionName}
             className="flex items-center gap-2 px-4 h-8 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
           >
             {loading ? (
@@ -228,12 +310,29 @@ export default function QueryEditor({
                                 </button>
                             </div>
                         </div>
-                        <button
-                            onClick={() => copyToClipboard(formatResults(results))}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
-                        >
-                            <FiCopy size={14} /> Copy
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => copyToClipboard(formatResults(results))}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                                title="Copy results to clipboard"
+                            >
+                                <FiCopy size={14} /> Copy
+                            </button>
+                            <button
+                                onClick={() => downloadResults('json')}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                                title="Download as JSON"
+                            >
+                                <FiDownload size={14} /> JSON
+                            </button>
+                            <button
+                                onClick={() => downloadResults('csv')}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                                title="Download as CSV"
+                            >
+                                <FiDownload size={14} /> CSV
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-hidden relative bg-background">

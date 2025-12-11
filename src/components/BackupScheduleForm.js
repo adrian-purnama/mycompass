@@ -14,8 +14,15 @@ const DAYS = [
   { value: 6, label: 'Saturday' },
 ];
 
-export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
-  const { connections } = useConnections();
+export default function BackupScheduleForm({ schedule, onSave, onCancel, organizationId }) {
+  const { connections } = useConnections(organizationId);
+
+  // Validate organizationId is provided
+  useEffect(() => {
+    if (!organizationId) {
+      console.warn('BackupScheduleForm: organizationId is missing');
+    }
+  }, [organizationId]);
   const [connectionId, setConnectionId] = useState('');
   const [databaseName, setDatabaseName] = useState('');
   const [databases, setDatabases] = useState([]);
@@ -140,12 +147,29 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
 
     setLoading(true);
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {};
+
+      // If connectionString is available and not empty (admin), use it. Otherwise use connectionId (member)
+      const hasConnectionString = connection.connectionString && typeof connection.connectionString === 'string' && connection.connectionString.trim().length > 0;
+      if (hasConnectionString) {
+        body.connectionString = connection.connectionString;
+      } else if (connectionId && organizationId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+      } else {
+        console.error('No valid connection information available');
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/databases', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString: connection.connectionString,
-        }),
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body),
       });
 
       const result = await response.json();
@@ -170,14 +194,32 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
 
     setLoading(true);
     try {
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        databaseName,
+        includeCounts: true,
+      };
+
+      // If connectionString is available and not empty (admin), use it. Otherwise use connectionId (member)
+      const hasConnectionString = connection.connectionString && typeof connection.connectionString === 'string' && connection.connectionString.trim().length > 0;
+      if (hasConnectionString) {
+        body.connectionString = connection.connectionString;
+      } else if (connectionId && organizationId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+      } else {
+        console.error('No valid connection information available');
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/collections', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString: connection.connectionString,
-          databaseName,
-          includeCounts: true,
-        }),
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body),
       });
 
       const result = await response.json();
@@ -265,6 +307,11 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
       return;
     }
 
+    if (!organizationId) {
+      setError('Organization ID is required. Please select an organization first.');
+      return;
+    }
+
     setLoading(true);
     try {
       const scheduleData = {
@@ -282,6 +329,7 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
         },
         retentionDays,
         password: backupPassword.trim(),
+        organizationId, // Include organizationId in the request
       };
 
       const url = schedule
@@ -351,20 +399,30 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
           <label className="block text-sm font-medium mb-2 text-foreground">
             Connection <span className="text-red-500">*</span>
           </label>
-          <select
-            value={connectionId}
-            onChange={(e) => setConnectionId(e.target.value)}
-            className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            required
-            disabled={!!schedule}
-          >
-            <option value="">Select a connection</option>
-            {connections.map(conn => (
-              <option key={conn.id} value={conn.id}>
-                {conn.displayName}
-              </option>
-            ))}
-          </select>
+          {!organizationId ? (
+            <div className="w-full px-3 py-2 border border-yellow-500 rounded-md bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 text-sm">
+              Please select an organization first. Go back and select an organization from the top navigation.
+            </div>
+          ) : (
+            <select
+              value={connectionId}
+              onChange={(e) => setConnectionId(e.target.value)}
+              className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+              disabled={!!schedule || !organizationId}
+            >
+              <option value="">Select a connection</option>
+              {connections.length === 0 ? (
+                <option value="" disabled>No connections available</option>
+              ) : (
+                connections.map(conn => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.displayName}
+                  </option>
+                ))
+              )}
+            </select>
+          )}
         </div>
 
         {/* Database Selection */}
@@ -607,7 +665,7 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel }) {
         <div className="flex gap-3 pt-4">
           <button
             type="submit"
-            disabled={loading || !googleDriveConnected}
+            disabled={loading || !googleDriveConnected || !organizationId}
             className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Saving...' : (schedule ? 'Update Schedule' : 'Create Schedule')}

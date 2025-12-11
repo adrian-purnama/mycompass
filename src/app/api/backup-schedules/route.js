@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getAppDatabase } from '@/lib/appdb';
+import { verifyPassword } from '@/lib/encryption';
+import { requireBackupPermission } from '@/lib/permissions';
 import { ObjectId } from 'mongodb';
-
-// Password required for backup operations
-const BACKUP_PASSWORD = process.env.BACKUP_PASSWORD || 'adriangacor';
 
 // Helper to get user from session token
 async function getUserFromToken(token) {
@@ -47,15 +46,37 @@ export async function GET(request) {
     const schedulesCollection = db.collection('backup_schedules');
     const logsCollection = db.collection('backup_logs');
     const connectionsCollection = db.collection('connections');
+    const organizationsCollection = db.collection('organizations');
 
     const schedules = await schedulesCollection
       .find({ userId: user.id })
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Get all connections for this user to map connection names
+    // Get all unique organization IDs from schedules (convert ObjectId to string)
+    const organizationIds = [...new Set(
+      schedules
+        .map(s => s.organizationId)
+        .filter(Boolean)
+        .map(id => id.toString ? id.toString() : String(id))
+    )];
+    
+    // Get organization names
+    const organizations = await organizationsCollection
+      .find({ _id: { $in: organizationIds.map(id => new ObjectId(id)) } })
+      .toArray();
+    
+    const organizationMap = {};
+    organizations.forEach(org => {
+      organizationMap[org._id.toString()] = org.name;
+    });
+
+    // Get all unique connection IDs from schedules
+    const connectionIds = [...new Set(schedules.map(s => s.connectionId).filter(Boolean))];
+    
+    // Get connections (they're organization-scoped now)
     const connections = await connectionsCollection
-      .find({ userId: user.id })
+      .find({ _id: { $in: connectionIds.map(id => new ObjectId(id)) } })
       .toArray();
     
     const connectionMap = {};
@@ -76,10 +97,27 @@ export async function GET(request) {
         // Calculate next run time
         const nextRun = calculateNextRun(schedule.schedule);
 
+        // Convert organizationId to string for lookup (handle both ObjectId and string)
+        const orgIdStr = schedule.organizationId 
+          ? (schedule.organizationId.toString ? schedule.organizationId.toString() : String(schedule.organizationId))
+          : null;
+
+        // Debug logging (can be removed later)
+        if (orgIdStr && !organizationMap[orgIdStr]) {
+          console.log('Organization not found in map:', {
+            orgIdStr,
+            availableKeys: Object.keys(organizationMap),
+            scheduleOrgId: schedule.organizationId,
+            scheduleOrgIdType: typeof schedule.organizationId
+          });
+        }
+
         return {
           id: schedule._id.toString(),
           connectionId: schedule.connectionId,
           connectionName: connectionMap[schedule.connectionId] || 'Unknown Connection',
+          organizationId: orgIdStr,
+          organizationName: orgIdStr ? (organizationMap[orgIdStr] || 'Unknown Organization') : null,
           databaseName: schedule.databaseName,
           collections: schedule.collections,
           destination: schedule.destination,
@@ -142,6 +180,7 @@ export async function POST(request) {
       schedule,
       retentionDays,
       password,
+      organizationId,
     } = body;
 
     // Validation
@@ -152,7 +191,32 @@ export async function POST(request) {
       );
     }
 
-    if (!password || password !== BACKUP_PASSWORD) {
+    if (!organizationId) {
+      return NextResponse.json(
+        { success: false, error: 'Organization ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check backup permission
+    await requireBackupPermission(user.id, organizationId);
+
+    // Get organization backup password
+    const { db } = await getAppDatabase();
+    const organizationsCollection = db.collection('organizations');
+    const organization = await organizationsCollection.findOne({
+      _id: new ObjectId(organizationId)
+    });
+
+    if (!organization) {
+      return NextResponse.json(
+        { success: false, error: 'Organization not found' },
+        { status: 404 }
+      );
+    }
+
+    // Verify backup password
+    if (!password || !verifyPassword(password, organization.backupPassword)) {
       return NextResponse.json(
         { success: false, error: 'Invalid backup password. Access denied.' },
         { status: 401 }
@@ -187,11 +251,12 @@ export async function POST(request) {
       );
     }
 
-    const { db } = await getAppDatabase();
+    // Use the existing db from line 166 - do not redeclare
     const schedulesCollection = db.collection('backup_schedules');
 
     const newSchedule = {
       userId: user.id,
+      organizationId, // Store organizationId with the schedule
       connectionId,
       databaseName,
       collections: collections || [],

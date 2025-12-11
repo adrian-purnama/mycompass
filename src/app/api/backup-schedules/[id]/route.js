@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getAppDatabase } from '@/lib/appdb';
+import { verifyPassword } from '@/lib/encryption';
+import { requireBackupPermission } from '@/lib/permissions';
 import { ObjectId } from 'mongodb';
-
-// Password required for backup operations
-const BACKUP_PASSWORD = process.env.BACKUP_PASSWORD || 'adriangacor';
 
 // Helper to get user from session token
 async function getUserFromToken(token) {
@@ -106,18 +105,21 @@ export async function PUT(request, { params }) {
 
     const { id } = await params;
     const body = await request.json();
-    const { password } = body;
+    const { password, organizationId } = body;
 
-    // Validate backup password
-    if (!password || password !== BACKUP_PASSWORD) {
+    if (!organizationId) {
       return NextResponse.json(
-        { success: false, error: 'Invalid backup password. Access denied.' },
-        { status: 401 }
+        { success: false, error: 'Organization ID is required' },
+        { status: 400 }
       );
     }
 
+    // Check backup permission
+    await requireBackupPermission(user.id, organizationId);
+
     const { db } = await getAppDatabase();
     const schedulesCollection = db.collection('backup_schedules');
+    const organizationsCollection = db.collection('organizations');
 
     // Verify schedule belongs to user
     const existing = await schedulesCollection.findOne({
@@ -129,6 +131,26 @@ export async function PUT(request, { params }) {
       return NextResponse.json(
         { success: false, error: 'Schedule not found' },
         { status: 404 }
+      );
+    }
+
+    // Get organization backup password
+    const organization = await organizationsCollection.findOne({
+      _id: new ObjectId(organizationId)
+    });
+
+    if (!organization) {
+      return NextResponse.json(
+        { success: false, error: 'Organization not found' },
+        { status: 404 }
+      );
+    }
+
+    // Validate backup password
+    if (!password || !verifyPassword(password, organization.backupPassword)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid backup password. Access denied.' },
+        { status: 401 }
       );
     }
 

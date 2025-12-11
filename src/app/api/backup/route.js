@@ -1,10 +1,28 @@
 import { NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
+import { getAppDatabase } from '@/lib/appdb';
+import { verifyPassword, decrypt } from '@/lib/encryption';
+import { requireBackupPermission, requireConnectionAccess } from '@/lib/permissions';
 import archiver from 'archiver';
 import { PassThrough } from 'stream';
+import { ObjectId } from 'mongodb';
 
-// Password required for backup operations
-const BACKUP_PASSWORD = process.env.BACKUP_PASSWORD || 'adriangacor';
+// Helper to get user from session token
+async function getUserFromToken(token) {
+  if (!token) return null;
+
+  const { db } = await getAppDatabase();
+  const sessionsCollection = db.collection('sessions');
+  const usersCollection = db.collection('users');
+
+  const session = await sessionsCollection.findOne({ token });
+  if (!session || new Date() > session.expiresAt) {
+    return null;
+  }
+
+  const user = await usersCollection.findOne({ _id: new ObjectId(session.userId) });
+  return user ? { id: user._id.toString(), email: user.email } : null;
+}
 
 // Convert Node.js Readable stream to Web ReadableStream
 function nodeStreamToWebStream(nodeStream) {
@@ -38,29 +56,109 @@ export async function POST(request) {
       );
     }
 
-    const { connectionString, databaseName, password } = body || {};
+    const { connectionString, connectionId, databaseName, password, organizationId } = body || {};
 
-    if (!connectionString || !databaseName) {
+    if ((!connectionString && !connectionId) || !databaseName) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Connection string and database name are required'
+          error: 'Connection information and database name are required'
         },
         { status: 400 }
       );
     }
 
-    if (!password || password !== BACKUP_PASSWORD) {
+    if (!organizationId) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Invalid password. Access denied.'
+          error: 'Organization ID is required'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Get user from session (for permission check)
+    const authHeader = request.headers.get('authorization');
+    let user = null;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      user = await getUserFromToken(token);
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Authentication required'
         },
         { status: 401 }
       );
     }
 
-    const client = await getMongoClient(connectionString);
+    // Check backup permission
+    await requireBackupPermission(user.id, organizationId);
+
+    // Get organization backup password
+    const { db } = await getAppDatabase();
+    const organizationsCollection = db.collection('organizations');
+    const organization = await organizationsCollection.findOne({
+      _id: new ObjectId(organizationId)
+    });
+
+    if (!organization) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Organization not found'
+        },
+        { status: 404 }
+      );
+    }
+
+    // Verify backup password
+    if (!password || !verifyPassword(password, organization.backupPassword)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid backup password. Access denied.'
+        },
+        { status: 401 }
+      );
+    }
+
+    // Get connection string (decrypt if needed for members)
+    let finalConnectionString = connectionString;
+    if (connectionId && organizationId) {
+      // Verify user has access to this connection
+      await requireConnectionAccess(user.id, connectionId, organizationId);
+
+      // Get and decrypt connection string
+      const connectionsCollection = db.collection('connections');
+      const connection = await connectionsCollection.findOne({
+        _id: new ObjectId(connectionId),
+        organizationId: new ObjectId(organizationId)
+      });
+
+      if (!connection) {
+        return NextResponse.json(
+          { success: false, error: 'Connection not found' },
+          { status: 404 }
+        );
+      }
+
+      const encryptionKey = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
+      try {
+        finalConnectionString = decrypt(connection.encryptedConnectionString, encryptionKey);
+      } catch (error) {
+        return NextResponse.json(
+          { success: false, error: 'Failed to decrypt connection string' },
+          { status: 500 }
+        );
+      }
+    }
+
+    const client = await getMongoClient(finalConnectionString);
     const db = client.db(databaseName);
 
     // Get all collections (excluding system collections)

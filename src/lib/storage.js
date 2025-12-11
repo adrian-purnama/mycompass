@@ -79,10 +79,14 @@ export function clearAuthToken() {
 
 /**
  * Get all saved connections (from API)
+ * @param {string} organizationId - Organization ID (required)
  * @returns {Promise<Array>} Array of connection objects
  */
-export async function getConnections() {
-  const response = await apiRequest('/api/connections');
+export async function getConnections(organizationId) {
+  if (!organizationId) {
+    return [];
+  }
+  const response = await apiRequest(`/api/connections?organizationId=${organizationId}`);
   const result = await response.json();
 
   if (!result.success) {
@@ -105,15 +109,19 @@ export async function saveConnections(connections) {
 
 /**
  * Add a new connection
- * @param {Object} connection - Connection object { displayName, connectionString }
+ * @param {Object} connection - Connection object { displayName, connectionString, organizationId }
  * @returns {Promise<Object>} Created connection
  */
 export async function addConnection(connection) {
+  if (!connection.organizationId) {
+    throw new Error('Organization ID is required');
+  }
   const response = await apiRequest('/api/connections', {
     method: 'POST',
     body: JSON.stringify({
       displayName: connection.displayName,
-      connectionString: connection.connectionString
+      connectionString: connection.connectionString,
+      organizationId: connection.organizationId
     })
   });
 

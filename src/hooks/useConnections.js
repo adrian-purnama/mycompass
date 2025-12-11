@@ -12,7 +12,7 @@ import {
   isAuthenticated
 } from '@/lib/storage';
 
-export function useConnections() {
+export function useConnections(organizationId) {
   const [connections, setConnections] = useState([]);
   const [activeConnectionId, setActiveConnectionIdState] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export function useConnections() {
       return;
     }
 
-    if (!isAuthenticated()) {
+    if (!isAuthenticated() || !organizationId) {
       setConnections([]);
       setActiveConnectionIdState(null);
       return;
@@ -35,7 +35,7 @@ export function useConnections() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const loaded = await getConnections();
+      const loaded = await getConnections(organizationId);
       setConnections(loaded);
       const activeId = getActiveConnectionId();
       setActiveConnectionIdState(activeId);
@@ -49,16 +49,16 @@ export function useConnections() {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
-    // Load connections when component mounts or when auth state changes
+    // Load connections when component mounts, when auth state changes, or when organizationId changes
     const timeoutId = setTimeout(() => {
       loadConnections();
     }, 0);
     return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [organizationId, loadConnections]);
 
   // Add a new connection
   const addConnection = useCallback(
@@ -68,8 +68,13 @@ export function useConnections() {
         return false;
       }
 
+      if (!organizationId) {
+        setError('Organization ID is required');
+        return false;
+      }
+
       try {
-        await addConnectionStorage(connection);
+        await addConnectionStorage({ ...connection, organizationId });
         await loadConnections();
         return true;
       } catch (error) {
@@ -78,7 +83,7 @@ export function useConnections() {
         return false;
       }
     },
-    [loadConnections]
+    [loadConnections, organizationId]
   );
 
   // Update an existing connection

@@ -6,7 +6,7 @@ import BackupScheduleForm from './BackupScheduleForm';
 import BackupLogsView from './BackupLogsView';
 import GoogleDriveAuth from './GoogleDriveAuth';
 
-export default function BackupScheduler() {
+export default function BackupScheduler({ organizationId }) {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -35,6 +35,8 @@ export default function BackupScheduler() {
 
       const result = await response.json();
       if (result.success) {
+        // Debug: log schedule data to see if organizationName is present
+        console.log('Schedules loaded:', result.schedules);
         setSchedules(result.schedules || []);
       } else {
         setError(result.error || 'Failed to load schedules');
@@ -253,6 +255,7 @@ export default function BackupScheduler() {
   if (showForm) {
     return (
       <BackupScheduleForm
+        organizationId={organizationId}
         schedule={editingSchedule}
         onSave={async () => {
           setShowForm(false);
@@ -365,7 +368,7 @@ export default function BackupScheduler() {
                         <div className="flex items-center gap-2 mb-2">
                           <FiDatabase size={18} className="text-primary" />
                           <h3 className="font-semibold text-foreground">
-                            {schedule.connectionName} / {schedule.databaseName}
+                            {schedule.organizationName ? `${schedule.organizationName} / ` : ''}{schedule.connectionName} / {schedule.databaseName}
                           </h3>
                           <button
                             onClick={() => handleToggle(schedule.id, schedule.enabled)}
@@ -471,7 +474,7 @@ export default function BackupScheduler() {
                     Execute Backup Immediately
                   </p>
                   <p className="text-xs text-blue-800 dark:text-blue-300">
-                    This will start a backup for <span className="font-semibold">{scheduleToExecute.connectionName} / {scheduleToExecute.databaseName}</span> right now.
+                    This will start a backup for <span className="font-semibold">{scheduleToExecute.organizationName ? `${scheduleToExecute.organizationName} / ` : ''}{scheduleToExecute.connectionName} / {scheduleToExecute.databaseName}</span> right now.
                   </p>
                 </div>
               </div>
@@ -479,7 +482,7 @@ export default function BackupScheduler() {
 
             <div className="mb-4 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                <span className="font-semibold">Schedule:</span> {scheduleToExecute.connectionName} / {scheduleToExecute.databaseName}
+                <span className="font-semibold">Schedule:</span> {scheduleToExecute.organizationName ? `${scheduleToExecute.organizationName} / ` : ''}{scheduleToExecute.connectionName} / {scheduleToExecute.databaseName}
               </p>
               <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
                 <span className="font-semibold">Collections:</span> {scheduleToExecute.collections.length > 0 ? scheduleToExecute.collections.length : 'All'}
@@ -535,7 +538,7 @@ export default function BackupScheduler() {
                     Backup Execution Started
                   </p>
                   <p className="text-xs text-green-800 dark:text-green-300">
-                    The backup for <span className="font-semibold">{executedSchedule.connectionName} / {executedSchedule.databaseName}</span> has been started. You can monitor the progress in the logs tab.
+                    The backup for <span className="font-semibold">{executedSchedule.organizationName ? `${executedSchedule.organizationName} / ` : ''}{executedSchedule.connectionName} / {executedSchedule.databaseName}</span> has been started. You can monitor the progress in the logs tab.
                   </p>
                 </div>
               </div>
@@ -543,7 +546,7 @@ export default function BackupScheduler() {
 
             <div className="mb-4 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                <span className="font-semibold">Schedule:</span> {executedSchedule.connectionName} / {executedSchedule.databaseName}
+                <span className="font-semibold">Schedule:</span> {executedSchedule.organizationName ? `${executedSchedule.organizationName} / ` : ''}{executedSchedule.connectionName} / {executedSchedule.databaseName}
               </p>
               <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
                 <span className="font-semibold">Status:</span> Running - Check logs for progress

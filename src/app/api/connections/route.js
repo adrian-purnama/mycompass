@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAppDatabase } from '@/lib/appdb';
 import { encrypt, decrypt } from '@/lib/encryption';
+import { isOrganizationMember, getUserRoleInOrganization, getUserAccessibleConnections, canManageConnections } from '@/lib/permissions';
 import { ObjectId } from 'mongodb';
 
 // Helper to get user from session token
@@ -41,17 +42,52 @@ export async function GET(request) {
       );
     }
 
+    const { searchParams } = new URL(request.url);
+    const organizationId = searchParams.get('organizationId');
+
+    if (!organizationId) {
+      return NextResponse.json(
+        { success: false, error: 'Organization ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if user is a member of the organization
+    const isMember = await isOrganizationMember(user.id, organizationId);
+    if (!isMember) {
+      return NextResponse.json(
+        { success: false, error: 'You are not a member of this organization' },
+        { status: 403 }
+      );
+    }
+
+    // Get user role
+    const userRole = await getUserRoleInOrganization(user.id, organizationId);
+    const isAdmin = userRole === 'admin';
+
     const { db } = await getAppDatabase();
     const connectionsCollection = db.collection('connections');
 
     const encryptionKey = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
     
+    // Get accessible connection IDs
+    const accessibleConnectionIds = await getUserAccessibleConnections(user.id, organizationId);
+    const accessibleConnectionIdsObj = accessibleConnectionIds.map(id => new ObjectId(id));
+
+    // For admins, get all connections. For members, filter by permissions
+    const query = isAdmin 
+      ? { organizationId: new ObjectId(organizationId) }
+      : { 
+          organizationId: new ObjectId(organizationId),
+          _id: { $in: accessibleConnectionIdsObj }
+        };
+    
     const connections = await connectionsCollection
-      .find({ userId: user.id })
+      .find(query)
       .sort({ lastUsed: -1, createdAt: -1 })
       .toArray();
 
-    // Decrypt connection strings
+    // Decrypt connection strings (only for admins)
     const decryptedConnections = connections.map(conn => {
       try {
         // Check if encrypted connection string exists
@@ -60,6 +96,18 @@ export async function GET(request) {
           return null;
         }
 
+        // For members, don't decrypt - return without connection string
+        if (!isAdmin) {
+          return {
+            id: conn._id.toString(),
+            displayName: conn.displayName,
+            connectionString: '', // Hidden from members
+            createdAt: conn.createdAt,
+            lastUsed: conn.lastUsed
+          };
+        }
+
+        // For admins, decrypt connection string
         // Validate encrypted data format
         if (typeof conn.encryptedConnectionString !== 'string') {
           console.warn(`Connection ${conn._id} has invalid encrypted connection string format`);
@@ -123,7 +171,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { displayName, connectionString } = body;
+    const { displayName, connectionString, organizationId } = body;
 
     if (!displayName || !connectionString) {
       return NextResponse.json(
@@ -132,8 +180,34 @@ export async function POST(request) {
       );
     }
 
+    if (!organizationId) {
+      return NextResponse.json(
+        { success: false, error: 'Organization ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if user is a member of the organization
+    const isMember = await isOrganizationMember(user.id, organizationId);
+    if (!isMember) {
+      return NextResponse.json(
+        { success: false, error: 'You are not a member of this organization' },
+        { status: 403 }
+      );
+    }
+
+    // Only admins can create connections
+    const canManage = await canManageConnections(user.id, organizationId);
+    if (!canManage) {
+      return NextResponse.json(
+        { success: false, error: 'Only organization admins can create connections' },
+        { status: 403 }
+      );
+    }
+
     const { db } = await getAppDatabase();
     const connectionsCollection = db.collection('connections');
+    const permissionsCollection = db.collection('connection_permissions');
 
     // Encrypt connection string
     const encryptionKey = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
@@ -141,6 +215,7 @@ export async function POST(request) {
 
     const connection = {
       userId: user.id,
+      organizationId: new ObjectId(organizationId),
       displayName,
       encryptedConnectionString: encrypted,
       createdAt: new Date(),
@@ -148,11 +223,22 @@ export async function POST(request) {
     };
 
     const result = await connectionsCollection.insertOne(connection);
+    const connectionId = result.insertedId;
+
+    // Auto-grant admin access to the creator
+    await permissionsCollection.insertOne({
+      userId: user.id,
+      connectionId: connectionId,
+      organizationId: new ObjectId(organizationId),
+      grantedAt: new Date(),
+      grantedBy: user.id,
+      createdAt: new Date()
+    });
 
     return NextResponse.json({
       success: true,
       connection: {
-        id: result.insertedId.toString(),
+        id: connectionId.toString(),
         displayName,
         connectionString, // Return decrypted for immediate use
         createdAt: connection.createdAt,

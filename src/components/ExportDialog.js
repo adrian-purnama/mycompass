@@ -7,11 +7,18 @@ export default function ExportDialog({
   isOpen,
   onClose,
   connectionString,
-  databaseName,
+  connectionId,
+  organizationId,
+  databaseName: initialDatabaseName,
   availableCollections = []
 }) {
+  const [selectedDatabase, setSelectedDatabase] = useState(initialDatabaseName || '');
+  const [databases, setDatabases] = useState([]);
+  const [loadingDatabases, setLoadingDatabases] = useState(false);
   const [selectedCollections, setSelectedCollections] = useState([]);
-  const [exportType, setExportType] = useState('selected'); // 'selected', 'all', 'single'
+  const [collections, setCollections] = useState([]);
+  const [loadingCollections, setLoadingCollections] = useState(false);
+  const [exportAll, setExportAll] = useState(false);
   const [format, setFormat] = useState('json');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
@@ -19,20 +26,119 @@ export default function ExportDialog({
   const [password, setPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
-  // Ensure availableCollections is always an array
-  const collections = Array.isArray(availableCollections) ? availableCollections : [];
-
+  // Load databases when dialog opens
   useEffect(() => {
     if (isOpen) {
+      loadDatabases();
+      setSelectedDatabase(initialDatabaseName || '');
       setSelectedCollections([]);
-      setExportType('selected');
+      setCollections([]);
+      setExportAll(false);
       setFormat('json');
       setProgress(null);
       setError(null);
       setPassword('');
       setShowPasswordModal(false);
     }
-  }, [isOpen]);
+  }, [isOpen, connectionString, connectionId, organizationId]);
+
+  // Load collections when database is selected
+  useEffect(() => {
+    if (isOpen && selectedDatabase) {
+      loadCollections(selectedDatabase);
+    } else {
+      setCollections([]);
+      setSelectedCollections([]);
+    }
+  }, [isOpen, selectedDatabase, connectionString, connectionId, organizationId]);
+
+  const loadDatabases = async () => {
+    setLoadingDatabases(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const body = {};
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (connectionString) {
+        body.connectionString = connectionString;
+      } else if (connectionId && organizationId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+      } else {
+        setError('Connection information is missing');
+        setLoadingDatabases(false);
+        return;
+      }
+
+      const response = await fetch('/api/databases', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setDatabases(result.databases || []);
+      } else {
+        setError(result.error || 'Failed to load databases');
+      }
+    } catch (error) {
+      console.error('Failed to load databases:', error);
+      setError('Failed to load databases');
+    } finally {
+      setLoadingDatabases(false);
+    }
+  };
+
+  const loadCollections = async (dbName) => {
+    setLoadingCollections(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        databaseName: dbName,
+        includeCounts: true
+      };
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (connectionString) {
+        body.connectionString = connectionString;
+      } else if (connectionId && organizationId) {
+        body.connectionId = connectionId;
+        body.organizationId = organizationId;
+      } else {
+        setError('Connection information is missing');
+        setLoadingCollections(false);
+        return;
+      }
+
+      const response = await fetch('/api/collections', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        const allCollections = result.collections || [];
+        const filtered = allCollections.filter(c => !c.name.startsWith('system.'));
+        setCollections(filtered);
+        setSelectedCollections([]);
+      } else {
+        setError(result.error || 'Failed to load collections');
+      }
+    } catch (error) {
+      console.error('Failed to load collections:', error);
+      setError('Failed to load collections');
+    } finally {
+      setLoadingCollections(false);
+    }
+  };
   
   // Prevent re-renders from causing issues
   const handleClose = useCallback(() => {
@@ -48,19 +154,31 @@ export default function ExportDialog({
         ? prev.filter((c) => c !== collectionName)
         : [...prev, collectionName]
     );
+    // Uncheck "export all" if manually selecting collections
+    if (exportAll) {
+      setExportAll(false);
+    }
   };
 
-  const selectAll = () => {
-    if (selectedCollections.length === collections.length) {
-      setSelectedCollections([]);
-    } else {
+  const handleExportAllChange = (checked) => {
+    setExportAll(checked);
+    if (checked) {
+      // Select all collections when "export all" is checked
       setSelectedCollections(collections.map((c) => c.name));
+    } else {
+      // Clear selection when "export all" is unchecked
+      setSelectedCollections([]);
     }
   };
 
   const handleExport = async () => {
-    if (exportType === 'selected' && selectedCollections.length === 0) {
-      setError('Please select at least one collection to export');
+    if (!selectedDatabase) {
+      setError('Please select a database');
+      return;
+    }
+
+    if (!exportAll && selectedCollections.length === 0) {
+      setError('Please select at least one collection to export or check "Export All"');
       return;
     }
 
@@ -74,65 +192,75 @@ export default function ExportDialog({
     setProgress('Preparing export...');
 
     try {
-      const collectionsToExport =
-        exportType === 'all' ? null : selectedCollections;
+      const collectionsToExport = exportAll ? null : selectedCollections;
+
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        databaseName: selectedDatabase,
+        collections: collectionsToExport,
+        format,
+        password: password.trim(),
+        organizationId
+      };
+
+      // If connectionString is available (admin), use it. Otherwise use connectionId (member)
+      if (connectionString) {
+        body.connectionString = connectionString;
+      } else if (connectionId && organizationId) {
+        body.connectionId = connectionId;
+      } else {
+        setError('Connection information is missing');
+        setLoading(false);
+        return;
+      }
 
       const response = await fetch('/api/export', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionString,
-          databaseName,
-          collections: collectionsToExport,
-          format,
-          password: password.trim()
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Export failed');
-      }
-
-      if (format === 'json') {
-        const data = await response.json();
-        if (data.success) {
-          // Download as JSON file
-          const jsonString = JSON.stringify(data.data, null, 2);
-          const blob = new Blob([jsonString], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${databaseName}_export.json`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-
-          setProgress(`Successfully exported ${data.collections.length} collection(s)`);
-          setTimeout(() => {
-            handleClose();
-          }, 2000);
-        } else {
-          setError(data.error || 'Export failed');
+        // Try to get error message from response
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Export failed');
+        } catch (e) {
+          // If response is not JSON, use the error message
+          throw new Error(e.message || 'Export failed');
         }
-      } else {
-        // BSON or other format - download directly
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${databaseName}_export.${format}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        setProgress('Export completed successfully');
-        setTimeout(() => {
-          handleClose();
-        }, 2000);
       }
+
+      // Export always returns a ZIP file now
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `${selectedDatabase}_export.zip`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const collectionCount = exportAll ? collections.length : selectedCollections.length;
+      setProgress(`Successfully exported ${collectionCount} collection(s) as ZIP file`);
+      setTimeout(() => {
+        handleClose();
+      }, 2000);
     } catch (error) {
       setError(error.message);
       setProgress(null);
@@ -157,63 +285,65 @@ export default function ExportDialog({
         </div>
 
         <div className="space-y-4">
-          <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
-            <h3 className="text-sm font-medium mb-2 text-black dark:text-zinc-50">Source</h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              <span className="font-medium">Database:</span> {databaseName}
-            </p>
-          </div>
-
+          {/* Step 1: Select Database */}
           <div>
             <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
-              Export Type
+              Step 1: Select Database <span className="text-red-500">*</span>
             </label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  value="all"
-                  checked={exportType === 'all'}
-                  onChange={(e) => setExportType(e.target.value)}
-                  className="text-blue-600"
-                />
-                <span className="text-sm text-black dark:text-zinc-50">All Collections</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  value="selected"
-                  checked={exportType === 'selected'}
-                  onChange={(e) => setExportType(e.target.value)}
-                  className="text-blue-600"
-                />
-                <span className="text-sm text-black dark:text-zinc-50">Selected Collections</span>
-              </label>
-            </div>
+            {loadingDatabases ? (
+              <div className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
+                Loading databases...
+              </div>
+            ) : (
+              <select
+                value={selectedDatabase}
+                onChange={(e) => setSelectedDatabase(e.target.value)}
+                className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select a database</option>
+                {databases.map((dbName) => (
+                  <option key={dbName} value={dbName}>
+                    {dbName}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {exportType === 'selected' && (
+          {/* Step 2: Export All Option */}
+          {selectedDatabase && (
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-black dark:text-zinc-50">
-                  Select Collections
-                </label>
-                <button
-                  onClick={selectAll}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  {selectedCollections.length === collections.length
-                    ? 'Deselect All'
-                    : 'Select All'}
-                </button>
-              </div>
-              <div className="max-h-48 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-md p-2">
-                {collections.length === 0 ? (
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center py-4">
-                    No collections available
-                  </p>
-                ) : (
-                  collections.map((coll) => (
+              <label className="flex items-center gap-2 cursor-pointer p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={exportAll}
+                  onChange={(e) => handleExportAllChange(e.target.checked)}
+                  className="text-blue-600 w-4 h-4"
+                />
+                <span className="text-sm font-medium text-black dark:text-zinc-50">
+                  Export All Collections
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* Step 3: Select Collections (if not exporting all) */}
+          {selectedDatabase && !exportAll && (
+            <div>
+              <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+                Step 2: Select Collections to Export <span className="text-red-500">*</span>
+              </label>
+              {loadingCollections ? (
+                <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-sm text-zinc-500 text-center">
+                  Loading collections...
+                </div>
+              ) : collections.length === 0 ? (
+                <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-sm text-zinc-500 text-center">
+                  No collections available
+                </div>
+              ) : (
+                <div className="max-h-64 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-md p-2 bg-white dark:bg-zinc-900">
+                  {collections.map((coll) => (
                     <label
                       key={coll.name}
                       className="flex items-center gap-2 p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded cursor-pointer"
@@ -231,12 +361,36 @@ export default function ExportDialog({
                         {coll.count?.toLocaleString() || 0} docs
                       </span>
                     </label>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
+              {selectedCollections.length > 0 && (
+                <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  {selectedCollections.length} collection(s) selected
+                </p>
+              )}
             </div>
           )}
 
+          {/* Password Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+              Backup Password <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter backup password"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="font-semibold">Required</span> to authorize export operation
+            </p>
+          </div>
+
+          {/* Export Format */}
           <div>
             <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
               Export Format
@@ -245,6 +399,7 @@ export default function ExportDialog({
               value={format}
               onChange={(e) => setFormat(e.target.value)}
               className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
             >
               <option value="json">JSON</option>
               <option value="bson">BSON (JSON format)</option>
@@ -268,9 +423,10 @@ export default function ExportDialog({
               onClick={handleExport}
               disabled={
                 loading ||
-                (exportType === 'selected' && selectedCollections.length === 0) ||
-                !connectionString ||
-                !databaseName ||
+                !selectedDatabase ||
+                (!exportAll && selectedCollections.length === 0) ||
+                (!connectionString && !connectionId) ||
+                !organizationId ||
                 !password ||
                 password.trim() === ''
               }
