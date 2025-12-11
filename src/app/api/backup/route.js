@@ -11,9 +11,9 @@ import { ObjectId } from 'mongodb';
 async function getUserFromToken(token) {
   if (!token) return null;
 
-  const { db } = await getAppDatabase();
-  const sessionsCollection = db.collection('sessions');
-  const usersCollection = db.collection('users');
+  const { db: appDb } = await getAppDatabase();
+  const sessionsCollection = appDb.collection('sessions');
+  const usersCollection = appDb.collection('users');
 
   const session = await sessionsCollection.findOne({ token });
   if (!session || new Date() > session.expiresAt) {
@@ -100,8 +100,8 @@ export async function POST(request) {
     await requireBackupPermission(user.id, organizationId);
 
     // Get organization backup password
-    const { db } = await getAppDatabase();
-    const organizationsCollection = db.collection('organizations');
+    const { db: appDb } = await getAppDatabase();
+    const organizationsCollection = appDb.collection('organizations');
     const organization = await organizationsCollection.findOne({
       _id: new ObjectId(organizationId)
     });
@@ -134,7 +134,7 @@ export async function POST(request) {
       await requireConnectionAccess(user.id, connectionId, organizationId);
 
       // Get and decrypt connection string
-      const connectionsCollection = db.collection('connections');
+      const connectionsCollection = appDb.collection('connections');
       const connection = await connectionsCollection.findOne({
         _id: new ObjectId(connectionId),
         organizationId: new ObjectId(organizationId)
@@ -159,10 +159,10 @@ export async function POST(request) {
     }
 
     const client = await getMongoClient(finalConnectionString);
-    const db = client.db(databaseName);
+    const mongoDb = client.db(databaseName);
 
     // Get all collections (excluding system collections)
-    const allCollections = await db.listCollections().toArray();
+    const allCollections = await mongoDb.listCollections().toArray();
     const collectionsToBackup = allCollections
       .map((c) => c.name)
       .filter((name) => !name.startsWith('system.'));
@@ -197,7 +197,7 @@ export async function POST(request) {
       try {
         for (const collectionName of collectionsToBackup) {
           try {
-            const collection = db.collection(collectionName);
+            const collection = mongoDb.collection(collectionName);
             const documents = await collection.find({}).toArray();
             
             // Convert documents to JSON string
