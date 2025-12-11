@@ -221,6 +221,9 @@ async function enforceRetentionPolicy(userId, scheduleId, retentionCount) {
  * @returns {Promise<Array<Object>>} Array of schedules that should run now
  */
 export async function getDueSchedules() {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] getDueSchedules: Checking for due backup schedules...`);
+  
   const { db } = await getAppDatabase();
   const schedulesCollection = db.collection('backup_schedules');
 
@@ -228,23 +231,39 @@ export async function getDueSchedules() {
   const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+  console.log(`[${timestamp}] Current time: ${currentTime} (Day: ${currentDay}, ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDay]})`);
+
   // Get all enabled schedules
   const allSchedules = await schedulesCollection
     .find({ enabled: true })
     .toArray();
 
+  console.log(`[${timestamp}] Found ${allSchedules.length} enabled schedule(s) total`);
+
   // Filter schedules that are due
   const dueSchedules = allSchedules.filter(schedule => {
+    const scheduleId = schedule._id.toString();
+    
     // Check if today is in the schedule's days
-    if (!schedule.schedule.days || !schedule.schedule.days.includes(currentDay)) {
+    if (!schedule.schedule || !schedule.schedule.days || !schedule.schedule.days.includes(currentDay)) {
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - today (${currentDay}) not in schedule days: ${JSON.stringify(schedule.schedule?.days || [])}`);
       return false;
     }
 
     // Check if current time matches any of the schedule's times
     const times = schedule.schedule.times || [];
-    return times.includes(currentTime);
+    const isDue = times.includes(currentTime);
+    
+    if (isDue) {
+      console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - matches time ${currentTime} (scheduled times: ${times.join(', ')})`);
+    } else {
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${currentTime} not in scheduled times: ${times.join(', ')}`);
+    }
+    
+    return isDue;
   });
 
+  console.log(`[${timestamp}] getDueSchedules: Found ${dueSchedules.length} schedule(s) due to run`);
   return dueSchedules;
 }
 

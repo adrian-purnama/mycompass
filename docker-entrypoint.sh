@@ -34,14 +34,21 @@ sleep 2
 
 # Verify cron is running
 if pgrep -x cron > /dev/null; then
-    echo "Cron daemon started successfully"
+    echo "✓ Cron daemon started successfully (PID: $(pgrep -x cron))"
     echo "Cron jobs configured:"
     cat /etc/cron.d/backup-cron
+    echo ""
+    echo "Cron will run every minute and log to: /var/log/backup-cron.log"
+    echo "To view cron logs: tail -f /var/log/backup-cron.log"
+    echo ""
 else
-    echo "WARNING: Cron daemon failed to start"
+    echo "✗ WARNING: Cron daemon failed to start"
     # Debug: Check if cron is installed
-    which cron || echo "cron command not found in PATH"
-    ls -la /usr/sbin/cron || echo "/usr/sbin/cron not found"
+    echo "Checking cron installation..."
+    which cron || echo "  - cron command not found in PATH"
+    ls -la /usr/sbin/cron || echo "  - /usr/sbin/cron not found"
+    echo "Attempting to start cron manually..."
+    /usr/sbin/cron || echo "  - Manual start failed"
 fi
 
 # Start Next.js application
