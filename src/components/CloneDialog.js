@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FiX, FiCopy, FiDatabase, FiCheckSquare, FiSquare } from 'react-icons/fi';
+import { FiX, FiCopy, FiDatabase, FiCheckSquare, FiSquare, FiAlertCircle, FiShield } from 'react-icons/fi';
 
 export default function CloneDialog({
   isOpen,
@@ -27,6 +27,8 @@ export default function CloneDialog({
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [password, setPassword] = useState('');
+  const [showSafeWarning, setShowSafeWarning] = useState(false);
+  const [safeConfirmName, setSafeConfirmName] = useState('');
 
   // Ensure availableConnections is always an array (define early so it can be used in callbacks)
   const connections = Array.isArray(availableConnections) ? availableConnections : [];
@@ -289,6 +291,20 @@ export default function CloneDialog({
       return;
     }
 
+    // Check if target connection is marked as safe
+    if (targetConnection.safe) {
+      // Show warning modal
+      setShowSafeWarning(true);
+      setSafeConfirmName('');
+      return;
+    }
+
+    // Proceed with clone if not safe
+    performClone(sourceConnection, targetConnection);
+  };
+
+  const performClone = async (sourceConnection, targetConnection) => {
+
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -356,6 +372,29 @@ export default function CloneDialog({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSafeConfirm = () => {
+    const targetConnection = connections.find((c) => c.id === targetConnectionId);
+    if (!targetConnection) {
+      setError('Target connection not found');
+      setShowSafeWarning(false);
+      return;
+    }
+
+    // Frontend validation: check if typed name matches connection display name
+    if (safeConfirmName.trim() !== targetConnection.displayName.trim()) {
+      setError('Connection name does not match');
+      return;
+    }
+
+    // Close warning and proceed with clone
+    setShowSafeWarning(false);
+    setError(null);
+    performClone(
+      connections.find((c) => c.id === sourceConnectionId),
+      targetConnection
+    );
   };
 
   if (!isOpen) return null;
@@ -669,6 +708,92 @@ export default function CloneDialog({
           </div>
         </div>
       </div>
+
+      {/* Safe Connection Warning Modal */}
+      {showSafeWarning && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-yellow-600 dark:text-yellow-500 flex items-center gap-2">
+                <FiShield size={20} />
+                Safe Connection Warning
+              </h2>
+              <button
+                onClick={() => {
+                  setShowSafeWarning(false);
+                  setSafeConfirmName('');
+                  setError(null);
+                }}
+                className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+
+            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+              <div className="flex items-start gap-2">
+                <FiAlertCircle className="text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" size={16} />
+                <div className="text-sm text-foreground">
+                  <p className="font-semibold mb-1">This connection is marked as safe.</p>
+                  <p className="text-muted-foreground">
+                    Cloning into this connection will override or add data to it. This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+                Type the connection name to confirm <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={safeConfirmName}
+                onChange={(e) => {
+                  setSafeConfirmName(e.target.value);
+                  setError(null);
+                }}
+                placeholder={connections.find((c) => c.id === targetConnectionId)?.displayName || ''}
+                className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                required
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Type <span className="font-mono font-semibold">{connections.find((c) => c.id === targetConnectionId)?.displayName || ''}</span> to confirm
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSafeWarning(false);
+                  setSafeConfirmName('');
+                  setError(null);
+                }}
+                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSafeConfirm}
+                disabled={safeConfirmName.trim() !== (connections.find((c) => c.id === targetConnectionId)?.displayName || '').trim()}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-yellow-600 text-white rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-yellow-700"
+              >
+                <FiShield size={16} />
+                Continue Clone
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

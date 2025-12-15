@@ -102,6 +102,7 @@ export async function GET(request) {
             id: conn._id.toString(),
             displayName: conn.displayName,
             connectionString: '', // Hidden from members
+            safe: conn.safe || false,
             createdAt: conn.createdAt,
             lastUsed: conn.lastUsed
           };
@@ -126,6 +127,7 @@ export async function GET(request) {
           id: conn._id.toString(),
           displayName: conn.displayName,
           connectionString: decrypted,
+          safe: conn.safe || false,
           createdAt: conn.createdAt,
           lastUsed: conn.lastUsed
         };
@@ -171,7 +173,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { displayName, connectionString, organizationId } = body;
+    const { displayName, connectionString, organizationId, safe } = body;
 
     if (!displayName || !connectionString) {
       return NextResponse.json(
@@ -218,6 +220,7 @@ export async function POST(request) {
       organizationId: new ObjectId(organizationId),
       displayName,
       encryptedConnectionString: encrypted,
+      safe: safe === true,
       createdAt: new Date(),
       lastUsed: null
     };
@@ -241,6 +244,7 @@ export async function POST(request) {
         id: connectionId.toString(),
         displayName,
         connectionString, // Return decrypted for immediate use
+        safe: connection.safe || false,
         createdAt: connection.createdAt,
         lastUsed: null
       }

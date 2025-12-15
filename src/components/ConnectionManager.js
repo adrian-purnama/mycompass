@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiDatabase, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiDatabase, FiChevronRight, FiShield } from 'react-icons/fi';
 import { useConnections } from '@/hooks/useConnections';
 import { useAuth } from '@/hooks/useAuth';
 import ConnectionForm from './ConnectionForm';
@@ -94,6 +94,36 @@ export default function ConnectionManager({ onConnect, organizationId }) {
     }
   };
 
+  const handleToggleSafe = async (connection) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+
+      const response = await fetch(`/api/connections/${connection.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          displayName: connection.displayName,
+          connectionString: connection.connectionString,
+          safe: !connection.safe
+        }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        // Reload connections
+        window.location.reload();
+      } else {
+        console.error('Failed to update safe status:', result.error);
+      }
+    } catch (error) {
+      console.error('Error updating safe status:', error);
+    }
+  };
+
   const handleConnect = (connection) => {
     setActiveConnection(connection.id);
     if (onConnect) {
@@ -163,6 +193,11 @@ export default function ConnectionManager({ onConnect, organizationId }) {
                       <h3 className="font-medium text-sm text-foreground truncate">
                         {connection.displayName}
                       </h3>
+                      {connection.safe && (
+                        <div className="flex items-center gap-1 text-yellow-600" title="This connection is marked as safe">
+                          <FiShield size={12} className="fill-current" />
+                        </div>
+                      )}
                     </div>
                     {isAdmin && connection.connectionString && (
                       <p className="text-xs text-muted-foreground truncate font-mono pl-8">
@@ -197,6 +232,17 @@ export default function ConnectionManager({ onConnect, organizationId }) {
                   </button>
                   {isAdmin && (
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                          onClick={() => handleToggleSafe(connection)}
+                          className={`p-1.5 rounded-md transition-colors ${
+                            connection.safe
+                              ? 'text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                          }`}
+                          title={connection.safe ? "Marked as safe - uncheck to remove protection" : "Mark as safe (prevents organization deletion)"}
+                      >
+                          <FiShield size={12} className={connection.safe ? 'fill-current' : ''} />
+                      </button>
                       <button
                           onClick={() => handleEdit(connection)}
                           className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"

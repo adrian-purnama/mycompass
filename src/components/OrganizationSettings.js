@@ -13,6 +13,7 @@ export default function OrganizationSettings({ organization, onClose }) {
   const [error, setError] = useState(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(null);
 
   const loadData = useCallback(async () => {
@@ -318,7 +319,7 @@ export default function OrganizationSettings({ organization, onClose }) {
 
           {/* Backup Password Section */}
           {organization.role === 'admin' && (
-            <div>
+            <div className="mb-6">
               <h3 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
                 <FiLock size={18} />
                 Backup Password
@@ -329,6 +330,38 @@ export default function OrganizationSettings({ organization, onClose }) {
               >
                 Reset Backup Password
               </button>
+            </div>
+          )}
+
+          {/* Danger Zone Section */}
+          {organization.role === 'admin' && (
+            <div className="border-t border-destructive/20 pt-6 mt-6">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-destructive flex items-center gap-2 mb-2">
+                  <FiAlertCircle size={18} />
+                  Danger Zone
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Irreversible and destructive actions
+                </p>
+              </div>
+              <div className="p-4 border border-destructive/30 rounded-lg bg-destructive/5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-semibold text-foreground mb-1">Delete Organization</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Once you delete an organization, there is no going back. Please be certain.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:bg-destructive/90 transition-colors flex items-center gap-2"
+                  >
+                    <FiTrash2 size={16} />
+                    Delete Organization
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -364,6 +397,20 @@ export default function OrganizationSettings({ organization, onClose }) {
             alert('Backup password reset successfully!');
           }}
           onCancel={() => setShowResetPasswordModal(false)}
+        />
+      )}
+
+      {/* Delete Organization Modal */}
+      {showDeleteModal && (
+        <DeleteOrganizationModal
+          organization={organization}
+          onSuccess={() => {
+            setShowDeleteModal(false);
+            onClose();
+            // Reload the page or redirect to organizations list
+            window.location.reload();
+          }}
+          onCancel={() => setShowDeleteModal(false)}
         />
       )}
     </div>
@@ -571,6 +618,123 @@ function ResetPasswordModal({ organizationId, onSuccess, onCancel }) {
               className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md font-medium transition-colors"
             >
               Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteOrganizationModal({ organization, onSuccess, onCancel }) {
+  const [confirmName, setConfirmName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    // Frontend validation: check if typed name matches organization name
+    if (confirmName.trim() !== organization.name.trim()) {
+      setError('Organization name does not match');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(`/api/organizations/${organization.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete organization');
+      }
+
+      onSuccess();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-destructive">
+            Delete Organization
+          </h2>
+          <button
+            onClick={onCancel}
+            className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            <FiX size={24} />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+          <div className="flex items-start gap-2">
+            <FiAlertCircle className="text-destructive flex-shrink-0 mt-0.5" size={16} />
+            <div className="text-sm text-foreground">
+              <p className="font-semibold mb-1">This action cannot be undone.</p>
+              <p className="text-muted-foreground">
+                This will permanently delete the organization, all its members, connections, and associated data.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+              Type the organization name to confirm <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              placeholder={organization.name}
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-destructive"
+              required
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Type <span className="font-mono font-semibold">{organization.name}</span> to confirm
+            </p>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-black dark:text-zinc-50 rounded-md font-medium transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading || confirmName.trim() !== organization.name.trim()}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-destructive/90"
+            >
+              <FiTrash2 size={16} />
+              {loading ? 'Deleting...' : 'Delete Organization'}
             </button>
           </div>
         </form>

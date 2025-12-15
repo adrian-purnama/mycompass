@@ -41,8 +41,9 @@ export async function GET(request, { params }) {
       );
     }
 
-    const { id } = params;
-    const organizationId = id;
+    // In Next.js App Router, params is a Promise that needs to be awaited
+    const resolvedParams = await params;
+    const organizationId = resolvedParams.id;
 
     // Check if user is a member
     const isMember = await isOrganizationMember(user.id, organizationId);
@@ -108,8 +109,9 @@ export async function PUT(request, { params }) {
       );
     }
 
-    const { id } = params;
-    const organizationId = id;
+    // In Next.js App Router, params is a Promise that needs to be awaited
+    const resolvedParams = await params;
+    const organizationId = resolvedParams.id;
 
     // Check admin permission
     await requireAdminPermission(user.id, organizationId);
@@ -178,14 +180,67 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const { id } = params;
-    const organizationId = id;
+    // In Next.js App Router, params is a Promise that needs to be awaited
+    const resolvedParams = await params;
+    const organizationId = resolvedParams.id;
 
-    // Check admin permission
-    await requireAdminPermission(user.id, organizationId);
+    if (!organizationId) {
+      return NextResponse.json(
+        { success: false, error: 'Organization ID is required' },
+        { status: 400 }
+      );
+    }
 
     const { db } = await getAppDatabase();
     const organizationsCollection = db.collection('organizations');
+    const connectionsCollection = db.collection('connections');
+
+    // Check if organization exists and get creator info
+    const organization = await organizationsCollection.findOne({
+      _id: new ObjectId(organizationId)
+    });
+
+    if (!organization) {
+      return NextResponse.json(
+        { success: false, error: 'Organization not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if there are any safe connections in this organization
+    const safeConnections = await connectionsCollection.find({
+      organizationId: new ObjectId(organizationId),
+      safe: true
+    }).toArray();
+
+    if (safeConnections.length > 0) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Cannot delete organization. There are ${safeConnections.length} connection(s) marked as safe. Please unmark them as safe before deleting the organization.` 
+        },
+        { status: 400 }
+      );
+    }
+
+    // Check admin permission - also allow creator to delete even if not in members table
+    try {
+      await requireAdminPermission(user.id, organizationId);
+    } catch (adminError) {
+      // If admin check fails, check if user is the creator
+      if (organization.createdBy === user.id) {
+        // Creator can delete the organization
+        console.log('Allowing creator to delete organization:', {
+          userId: user.id,
+          organizationId,
+          createdBy: organization.createdBy
+        });
+      } else {
+        // Not admin and not creator - deny access
+        throw adminError;
+      }
+    }
+
     const membersCollection = db.collection('organization_members');
     const invitationsCollection = db.collection('organization_invitations');
 

@@ -44,7 +44,7 @@ export async function PUT(request, { params }) {
 
     const { id } = await params;
     const body = await request.json();
-    const { displayName, connectionString } = body;
+    const { displayName, connectionString, safe } = body;
 
     const { db } = await getAppDatabase();
     const connectionsCollection = db.collection('connections');
@@ -91,6 +91,10 @@ export async function PUT(request, { params }) {
       update.encryptedConnectionString = encrypt(connectionString, encryptionKey);
     }
 
+    if (safe !== undefined) {
+      update.safe = safe === true;
+    }
+
     // Build query based on organization or user
     const query = existing.organizationId
       ? { _id: new ObjectId(id), organizationId: existing.organizationId }
@@ -127,6 +131,7 @@ export async function PUT(request, { params }) {
         id: updated._id.toString(),
         displayName: updated.displayName,
         connectionString: decrypted,
+        safe: updated.safe || false,
         createdAt: updated.createdAt,
         lastUsed: updated.lastUsed
       }
