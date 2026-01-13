@@ -44,4 +44,22 @@ echo "Cron will run every minute and log to: /var/log/backup-cron.log"
 
 # Start supervisord which will manage both cron and Next.js
 echo "Starting supervisord to manage cron and Next.js..."
-exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+
+# Ensure supervisord config exists
+if [ ! -f /etc/supervisor/conf.d/supervisord.conf ]; then
+    echo "ERROR: Supervisord config not found at /etc/supervisor/conf.d/supervisord.conf"
+    exit 1
+fi
+
+# Verify supervisord is installed
+if [ ! -f /usr/bin/supervisord ]; then
+    echo "ERROR: Supervisord not found at /usr/bin/supervisord"
+    exit 1
+fi
+
+# Start supervisord in foreground mode
+echo "Supervisord config:"
+cat /etc/supervisor/conf.d/supervisord.conf
+echo ""
+
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf -n

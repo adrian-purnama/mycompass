@@ -63,6 +63,10 @@
     COPY docker-entrypoint.sh /docker-entrypoint.sh
     RUN chmod +x /docker-entrypoint.sh
     
+    # --- HELPER SCRIPT ---
+    COPY start-services.sh /start-services.sh
+    RUN chmod +x /start-services.sh
+    
     EXPOSE 3000
     
     CMD ["/docker-entrypoint.sh"]
