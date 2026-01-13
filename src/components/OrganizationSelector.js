@@ -80,20 +80,27 @@ export default function OrganizationSelector({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="h-8 px-2 sm:px-3 flex items-center gap-1.5 sm:gap-2 text-xs font-medium rounded-md bg-card border border-border hover:bg-accent text-foreground transition-colors whitespace-nowrap max-w-[200px] sm:max-w-none shadow-sm"
+        disabled={loading}
+        className="h-8 px-2 sm:px-3 flex items-center gap-1.5 sm:gap-2 text-xs font-medium rounded-md bg-card border border-border hover:bg-accent text-foreground transition-colors whitespace-nowrap max-w-[200px] sm:max-w-none shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         title={selectedOrg ? selectedOrg.name : 'Select Organization'}
       >
+        {loading ? (
+          <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+        ) : (
         <FiUsers size={14} className="flex-shrink-0" />
+        )}
         <span className="hidden sm:inline truncate">
-          {selectedOrg ? selectedOrg.name : 'No Org'}
+          {loading ? 'Loading...' : (selectedOrg ? selectedOrg.name : 'No Org')}
         </span>
         <span className="sm:hidden truncate">
-          {selectedOrg ? selectedOrg.name.substring(0, 8) + (selectedOrg.name.length > 8 ? '...' : '') : 'Org'}
+          {loading ? '...' : (selectedOrg ? selectedOrg.name.substring(0, 8) + (selectedOrg.name.length > 8 ? '...' : '') : 'Org')}
         </span>
+        {!loading && (
         <FiChevronDown 
           size={12} 
           className={`flex-shrink-0 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
         />
+        )}
       </button>
 
       {isOpen && (

@@ -1,6 +1,7 @@
 import { getMongoClient } from './mongodb';
 import { getAppDatabase } from './appdb';
 import { uploadFile, deleteFile } from './googleDrive';
+import { sendTelegramNotification, formatBackupTelegramMessage } from './telegram';
 import { ObjectId } from 'mongodb';
 import JSZip from 'jszip';
 
@@ -141,6 +142,29 @@ export async function executeBackup(scheduleId) {
     // Enforce retention policy - keep only the last N backups
     await enforceRetentionPolicy(schedule.userId, scheduleId, schedule.retentionDays);
 
+    // Send Telegram notification if configured at organization level
+    if (schedule.organizationId) {
+      try {
+        const organizationsCollection = db.collection('organizations');
+        const organization = await organizationsCollection.findOne({
+          _id: new ObjectId(schedule.organizationId)
+        });
+
+        if (organization && organization.telegramBotToken && organization.telegramChatId) {
+          const updatedLog = await logsCollection.findOne({ _id: new ObjectId(logId) });
+          const message = formatBackupTelegramMessage(updatedLog, schedule);
+          await sendTelegramNotification(
+            organization.telegramBotToken,
+            organization.telegramChatId,
+            message
+          );
+        }
+      } catch (telegramError) {
+        console.error('Failed to send Telegram notification:', telegramError);
+        // Don't fail the backup if Telegram notification fails
+      }
+    }
+
     return { success: true, logId };
   } catch (error) {
     console.error('Backup execution error:', error);
@@ -160,6 +184,29 @@ export async function executeBackup(scheduleId) {
         },
       }
     );
+
+    // Send Telegram notification for error if configured at organization level
+    if (schedule.organizationId) {
+      try {
+        const organizationsCollection = db.collection('organizations');
+        const organization = await organizationsCollection.findOne({
+          _id: new ObjectId(schedule.organizationId)
+        });
+
+        if (organization && organization.telegramBotToken && organization.telegramChatId) {
+          const errorLog = await logsCollection.findOne({ _id: new ObjectId(logId) });
+          const message = formatBackupTelegramMessage(errorLog, schedule);
+          await sendTelegramNotification(
+            organization.telegramBotToken,
+            organization.telegramChatId,
+            message
+          );
+        }
+      } catch (telegramError) {
+        console.error('Failed to send Telegram notification:', telegramError);
+        // Don't fail the backup if Telegram notification fails
+      }
+    }
 
     return { success: false, error: error.message, logId };
   }

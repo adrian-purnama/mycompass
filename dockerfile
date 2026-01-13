@@ -25,7 +25,7 @@
     
     # --- TIMEZONE ---
     ENV TZ=Asia/Jakarta
-    RUN apt-get update && apt-get install -y tzdata cron curl && rm -rf /var/lib/apt/lists/* && \
+    RUN apt-get update && apt-get install -y tzdata cron curl supervisor && rm -rf /var/lib/apt/lists/* && \
         ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
     
     # --- FIX NODE PATH FOR CRON ---
@@ -54,6 +54,10 @@
         echo "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin" >> /etc/cron.d/backup-cron && \
         echo "* * * * * root /app/run-backup-cron.sh >> /var/log/backup-cron.log 2>&1" >> /etc/cron.d/backup-cron && \
         chmod 0644 /etc/cron.d/backup-cron
+    
+    # --- SUPERVISOR CONFIG ---
+    RUN mkdir -p /etc/supervisor/conf.d
+    COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
     
     # --- ENTRYPOINT ---
     COPY docker-entrypoint.sh /docker-entrypoint.sh

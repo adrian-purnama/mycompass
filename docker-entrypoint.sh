@@ -36,26 +36,12 @@ EOF
 
 chmod 0644 /etc/cron.d/backup-cron
 
-# Start cron daemon (Debian uses 'cron')
-echo "Starting cron daemon..."
-cron &
+# Verify cron configuration
+echo "Cron jobs configured:"
+cat /etc/cron.d/backup-cron
+echo ""
+echo "Cron will run every minute and log to: /var/log/backup-cron.log"
 
-sleep 2
-
-# Verify cron is running
-if pgrep -x cron > /dev/null; then
-    echo "✓ Cron daemon started successfully (PID: $(pgrep -x cron))"
-    echo "Cron jobs configured:"
-    cat /etc/cron.d/backup-cron
-    echo ""
-    echo "Cron will run every minute and log to: /var/log/backup-cron.log"
-else
-    echo "✗ WARNING: Cron daemon failed to start"
-    which cron || echo "  - cron command not found"
-    ls -la /usr/sbin/cron || echo "  - /usr/sbin/cron missing"
-    echo "Attempting manual start..."
-    /usr/sbin/cron || echo "  - Manual start failed"
-fi
-
-echo "Starting Next.js application..."
-exec npm start
+# Start supervisord which will manage both cron and Next.js
+echo "Starting supervisord to manage cron and Next.js..."
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

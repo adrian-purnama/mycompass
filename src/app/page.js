@@ -509,6 +509,18 @@ export default function Home() {
     }
   }, [isResizingLeft, isResizingMiddle, leftSidebarWidth, isLeftCollapsed]);
 
+  // Show loading overlay during initial auth check
+  if (authLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Show auth modal if not authenticated
   if (!authLoading && !isAuthenticated) {
     return (
@@ -695,7 +707,7 @@ export default function Home() {
             
             {!isLeftCollapsed && (
               <div className="flex-1 overflow-hidden">
-                <ConnectionManager onConnect={handleConnect} organizationId={selectedOrganizationId} />
+                <ConnectionManager onConnect={handleConnect} organizationId={selectedOrganizationId} loading={connectionsLoading} />
               </div>
             )}
 
@@ -815,7 +827,6 @@ export default function Home() {
                   </div>
                   <div className={`h-full w-full ${activeTab === 'query' ? 'block' : 'hidden'}`}>
                     <QueryEditor
-                      key={`query_${selectedDatabase}_${selectedCollection}`}
                       connectionString={activeConnection?.connectionString || null}
                       connectionId={activeConnection?.id || null}
                       organizationId={selectedOrganizationId}

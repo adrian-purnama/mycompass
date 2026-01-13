@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiClock, FiDatabase, FiHardDrive, FiToggleLeft, FiToggleRight, FiPlay, FiRefreshCw, FiX, FiAlertCircle, FiCheckCircle } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiClock, FiDatabase, FiHardDrive, FiToggleLeft, FiToggleRight, FiPlay, FiRefreshCw, FiX, FiAlertCircle, FiCheckCircle, FiMoreVertical, FiSettings } from 'react-icons/fi';
 import BackupScheduleForm from './BackupScheduleForm';
 import BackupLogsView from './BackupLogsView';
 import GoogleDriveAuth from './GoogleDriveAuth';
+import TelegramSettings from './TelegramSettings';
 
 export default function BackupScheduler({ organizationId }) {
   const [schedules, setSchedules] = useState([]);
@@ -19,6 +20,7 @@ export default function BackupScheduler({ organizationId }) {
   const [scheduleToExecute, setScheduleToExecute] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [executedSchedule, setExecutedSchedule] = useState(null);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
 
   const loadSchedules = useCallback(async () => {
     const token = localStorage.getItem('auth_token');
@@ -275,6 +277,7 @@ export default function BackupScheduler({ organizationId }) {
       {/* Header with tabs */}
       <div className="border-b border-border bg-card">
         <div className="flex items-center justify-between px-4 py-3">
+          {/* Left: Tabs */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveView('schedules')}
@@ -299,13 +302,9 @@ export default function BackupScheduler({ organizationId }) {
               Logs
             </button>
           </div>
+
+          {/* Right: Actions */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-md text-sm">
-              <FiClock size={14} className="text-muted-foreground" />
-              <span className="text-muted-foreground">Server Time:</span>
-              <span className="text-foreground font-medium font-mono">{formatServerTime()}</span>
-            </div>
-            <GoogleDriveAuth onConnect={loadSchedules} />
             {activeView === 'schedules' && (
               <button
                 onClick={handleAdd}
@@ -315,6 +314,47 @@ export default function BackupScheduler({ organizationId }) {
                 Add Schedule
               </button>
             )}
+            
+            {/* Settings Menu */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                title="Settings"
+              >
+                <FiSettings size={16} />
+              </button>
+              
+              {showSettingsMenu && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowSettingsMenu(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-card border border-border rounded-lg shadow-lg z-50 py-2 bg-white">
+                    <div className="px-4 py-2 border-b border-border">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Settings</p>
+                    </div>
+                    <div className="px-2 py-2 space-y-1">
+                      <div className="px-3 py-2">
+                        <GoogleDriveAuth onConnect={loadSchedules} />
+                      </div>
+                      <div className="px-3 py-2">
+                        <TelegramSettings organizationId={organizationId} />
+                      </div>
+                    </div>
+                    <div className="px-4 py-2 border-t border-border">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <FiClock size={12} />
+                        <span>Server Time:</span>
+                        <span className="font-mono font-medium text-foreground">{formatServerTime()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <button
               onClick={loadSchedules}
               className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"

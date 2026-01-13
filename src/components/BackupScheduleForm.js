@@ -71,7 +71,7 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
       setRetentionDays(schedule.retentionDays || 7);
       setBackupPassword(''); // Clear password - user must re-enter for security
     } else {
-      // New schedule - clear password
+      // New schedule - clear all fields
       setBackupPassword('');
       setDatabaseName('');
     }

@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiDatabase, FiChevronRight, FiShield } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiDatabase, FiChevronRight, FiShield, FiAlertTriangle, FiX } from 'react-icons/fi';
 import { useConnections } from '@/hooks/useConnections';
 import { useAuth } from '@/hooks/useAuth';
 import ConnectionForm from './ConnectionForm';
 
-export default function ConnectionManager({ onConnect, organizationId }) {
+export default function ConnectionManager({ onConnect, organizationId, loading: externalLoading }) {
   const { user } = useAuth();
   const [userRole, setUserRole] = useState(null);
   const {
@@ -16,12 +16,19 @@ export default function ConnectionManager({ onConnect, organizationId }) {
     updateConnection,
     deleteConnection,
     setActiveConnection,
-    error
+    error,
+    loading: hookLoading
   } = useConnections(organizationId);
+  
+  // Use external loading prop if provided, otherwise fall back to hook loading
+  const loading = externalLoading !== undefined ? externalLoading : hookLoading;
 
   const [showForm, setShowForm] = useState(false);
   const [editingConnection, setEditingConnection] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [connectionToDelete, setConnectionToDelete] = useState(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   // Fetch user role in organization
   useEffect(() => {
@@ -81,6 +88,18 @@ export default function ConnectionManager({ onConnect, organizationId }) {
   };
 
   const handleDelete = async (id) => {
+    const connection = connections.find(c => c.id === id);
+    if (!connection) return;
+
+    // If connection is protected (safe), show confirmation dialog requiring name
+    if (connection.safe) {
+      setConnectionToDelete(connection);
+      setDeleteConfirmName('');
+      setShowDeleteConfirm(true);
+      return;
+    }
+
+    // For non-protected connections, use simple confirm
     if (!confirm('Are you sure you want to delete this connection?')) {
       return;
     }
@@ -92,6 +111,33 @@ export default function ConnectionManager({ onConnect, organizationId }) {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!connectionToDelete) return;
+
+    // Validate that typed name matches connection name
+    if (deleteConfirmName.trim() !== connectionToDelete.displayName.trim()) {
+      return; // Don't delete if names don't match
+    }
+
+    setShowDeleteConfirm(false);
+    setDeletingId(connectionToDelete.id);
+    try {
+      await deleteConnection(connectionToDelete.id);
+    } catch (error) {
+      console.error('Error deleting connection:', error);
+    } finally {
+      setDeletingId(null);
+      setConnectionToDelete(null);
+      setDeleteConfirmName('');
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteConfirm(false);
+    setConnectionToDelete(null);
+    setDeleteConfirmName('');
   };
 
   const handleToggleSafe = async (connection) => {
@@ -167,7 +213,12 @@ export default function ConnectionManager({ onConnect, organizationId }) {
       )}
 
       <div className="flex-1 overflow-y-auto p-2">
-        {connections.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm font-medium">Loading connections...</p>
+          </div>
+        ) : connections.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <FiDatabase size={32} className="mx-auto mb-3 opacity-20" />
             <p className="text-sm font-medium">No connections</p>
@@ -266,6 +317,67 @@ export default function ConnectionManager({ onConnect, organizationId }) {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog for Protected Connections */}
+      {showDeleteConfirm && connectionToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-card border border-border rounded-lg shadow-xl p-6 w-full max-w-md mx-4 relative bg-white">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <FiAlertTriangle className="text-destructive" size={20} />
+                <h2 className="text-lg font-semibold text-foreground">Delete Protected Connection</h2>
+              </div>
+              <button
+                onClick={handleDeleteCancel}
+                className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-muted-foreground mb-2">
+                Are you sure you want to delete this connection?
+              </p>
+              <p className="text-sm font-medium text-foreground mb-4">
+                Connection name: <span className="text-primary">{connectionToDelete.displayName}</span>
+              </p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Type the connection name to confirm deletion:
+              </p>
+              <input
+                type="text"
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                placeholder="Type connection name here"
+                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && deleteConfirmName.trim() === connectionToDelete.displayName.trim()) {
+                    handleDeleteConfirm();
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleteConfirmName.trim() !== connectionToDelete.displayName.trim() || deletingId === connectionToDelete.id}
+                className="flex-1 px-4 py-2 bg-destructive text-destructive-foreground rounded-md font-medium hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingId === connectionToDelete.id ? 'Deleting...' : 'Delete Connection'}
+              </button>
+              <button
+                onClick={handleDeleteCancel}
+                className="px-4 py-2 border border-border hover:bg-accent text-foreground rounded-md font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
