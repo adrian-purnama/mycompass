@@ -69,5 +69,9 @@
     
     EXPOSE 3000
     
-    CMD ["/docker-entrypoint.sh"]
+    # Use ENTRYPOINT to ensure supervisord always runs
+    ENTRYPOINT ["/docker-entrypoint.sh"]
+    
+    # CMD is empty since entrypoint handles everything
+    CMD []
     

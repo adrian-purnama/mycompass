@@ -1,13 +1,28 @@
 #!/bin/sh
 
 # Print environment info for debugging
-echo "Starting application..."
+echo "=========================================="
+echo "Starting application via supervisord..."
 echo "NODE_ENV: ${NODE_ENV}"
 echo "PORT: ${PORT}"
+echo "=========================================="
 
-# Ensure log file exists and is writable
+# Kill any existing Next.js processes that might be running
+# (in case container was started differently)
+pkill -f "next-server" 2>/dev/null || true
+pkill -f "npm start" 2>/dev/null || true
+sleep 1
+
+# Ensure log directory exists and is writable
+mkdir -p /var/log
 touch /var/log/backup-cron.log
+touch /var/log/supervisord.log
+touch /var/log/cron.out.log
+touch /var/log/cron.err.log
+touch /var/log/nextjs.out.log
+touch /var/log/nextjs.err.log
 chmod 666 /var/log/backup-cron.log
+chmod 666 /var/log/*.log 2>/dev/null || true
 
 # Update the cron job with current environment variables
 echo "Updating cron job with environment variables..."
@@ -43,7 +58,9 @@ echo ""
 echo "Cron will run every minute and log to: /var/log/backup-cron.log"
 
 # Start supervisord which will manage both cron and Next.js
+echo "=========================================="
 echo "Starting supervisord to manage cron and Next.js..."
+echo "=========================================="
 
 # Ensure supervisord config exists
 if [ ! -f /etc/supervisor/conf.d/supervisord.conf ]; then
@@ -57,9 +74,16 @@ if [ ! -f /usr/bin/supervisord ]; then
     exit 1
 fi
 
-# Start supervisord in foreground mode
-echo "Supervisord config:"
-cat /etc/supervisor/conf.d/supervisord.conf
+# Verify supervisor config syntax
+if ! /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf -t; then
+    echo "ERROR: Supervisord config syntax error"
+    exit 1
+fi
+
+echo "Supervisord configuration is valid"
+echo "Starting supervisord in foreground mode..."
 echo ""
 
+# Start supervisord in foreground mode (this becomes PID 1)
+# This ensures supervisord manages both cron and Next.js
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf -n
