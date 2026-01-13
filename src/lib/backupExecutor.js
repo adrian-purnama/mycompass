@@ -334,18 +334,23 @@ export async function getDueSchedules() {
   const schedulesCollection = db.collection('backup_schedules');
   const logsCollection = db.collection('backup_logs');
 
-  // Use UTC time for checking schedules (schedules are stored in UTC)
+  // Get server timezone
+  const serverTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const now = new Date();
-  const currentDayUTC = now.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  const currentTimeUTC = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
-  const currentTimeInMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   
-  // Also log local time for debugging
-  const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const localDay = now.getDay();
+  // Use LOCAL time for checking schedules since users enter times in local timezone
+  // Even though schedules are stored with timezone: 'UTC', the times are actually in local timezone
+  const currentDayLocal = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  const currentTimeLocal = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+  
+  // Also log UTC time for debugging
+  const currentDayUTC = now.getUTCDay();
+  const currentTimeUTC = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
 
-  console.log(`[${timestamp}] UTC time: ${currentTimeUTC} (Day: ${currentDayUTC}, ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDayUTC]})`);
-  console.log(`[${timestamp}] Local time: ${localTime} (Day: ${localDay}) - Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+  console.log(`[${timestamp}] Server timezone: ${serverTimezone}`);
+  console.log(`[${timestamp}] LOCAL time: ${currentTimeLocal} (Day: ${currentDayLocal}, ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDayLocal]})`);
+  console.log(`[${timestamp}] UTC time: ${currentTimeUTC} (Day: ${currentDayUTC}) - Using LOCAL time for schedule comparison`);
 
   // Get all enabled schedules
   const allSchedules = await schedulesCollection
@@ -359,9 +364,9 @@ export async function getDueSchedules() {
     console.log(`[${timestamp}] Schedule ${idx + 1}: ID=${s._id.toString()}, DB=${s.databaseName}, Days=${JSON.stringify(s.schedule?.days || [])}, Times=${JSON.stringify(s.schedule?.times || [])}, Enabled=${s.enabled}`);
   });
 
-  // Get start of today in UTC for checking executions
+  // Get start of today in LOCAL time for checking executions
   const todayStart = new Date(now);
-  todayStart.setUTCHours(0, 0, 0, 0);
+  todayStart.setHours(0, 0, 0, 0);
 
   // Filter schedules that are due (including overdue ones)
   const dueSchedules = await Promise.all(
@@ -369,11 +374,12 @@ export async function getDueSchedules() {
       const scheduleId = schedule._id.toString();
       const scheduleTimezone = schedule.schedule?.timezone || 'UTC';
       
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Timezone=${scheduleTimezone}, Stored times=${JSON.stringify(schedule.schedule?.times || [])}`);
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Stored timezone=${scheduleTimezone}, Stored times=${JSON.stringify(schedule.schedule?.times || [])}`);
       
-      // Use UTC for checking (schedules are stored in UTC by default)
-      const checkDay = currentDayUTC;
-      const checkTime = currentTimeUTC;
+      // Use LOCAL time for checking since users enter times in local timezone
+      // Even if stored as UTC, interpret the times as local timezone
+      const checkDay = currentDayLocal;
+      const checkTime = currentTimeLocal;
       
       // Check if today is in the schedule's days
       if (!schedule.schedule || !schedule.schedule.days || !schedule.schedule.days.includes(checkDay)) {
@@ -386,23 +392,23 @@ export async function getDueSchedules() {
         console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - no scheduled times configured`);
         return null;
       }
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Checking ${times.length} scheduled time(s): ${times.join(', ')} (timezone: ${scheduleTimezone})`);
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Checking ${times.length} scheduled time(s): ${times.join(', ')} (stored as ${scheduleTimezone}, interpreting as LOCAL time)`);
       
       // Check each scheduled time
       for (const scheduledTime of times) {
         const [scheduledHours, scheduledMinutes] = scheduledTime.split(':').map(Number);
         
-        // Times are stored as UTC strings (e.g., "16:01" means 16:01 UTC)
-        // But if scheduleTimezone is not UTC, the stored time might actually be in that timezone
-        // For now, we'll treat all stored times as UTC since the form hardcodes timezone to UTC
+        // IMPORTANT: Even though schedules are stored with timezone: 'UTC', 
+        // users enter times in their LOCAL timezone (Asia/Jakarta).
+        // So we interpret stored times as LOCAL time, not UTC.
+        // Example: User enters "16:01" → stored as "16:01" → interpreted as 16:01 LOCAL time
         let scheduledTimeInMinutes = scheduledHours * 60 + scheduledMinutes;
         
-        console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time "${scheduledTime}" interpreted as ${scheduledTimeInMinutes} minutes (timezone: ${scheduleTimezone})`);
+        console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time "${scheduledTime}" interpreted as ${scheduledTimeInMinutes} minutes (LOCAL time, server timezone: ${serverTimezone})`);
         
         const timeDiff = currentTimeInMinutes - scheduledTimeInMinutes;
         
-        const scheduledTimeStr = `${String(Math.floor(scheduledTimeInMinutes / 60)).padStart(2, '0')}:${String(scheduledTimeInMinutes % 60).padStart(2, '0')}`;
-        console.log(`[${timestamp}] Schedule ${scheduleId}: Comparing scheduled time "${scheduledTime}" (${scheduledTimeInMinutes} min / ${scheduledTimeStr} UTC) vs current "${checkTime}" UTC (${currentTimeInMinutes} min) - diff: ${timeDiff} min`);
+        console.log(`[${timestamp}] Schedule ${scheduleId}: Comparing scheduled time "${scheduledTime}" LOCAL (${scheduledTimeInMinutes} min) vs current "${checkTime}" LOCAL (${currentTimeInMinutes} min) - diff: ${timeDiff} min`);
         
         // Handle negative timeDiff (scheduled time is later today) or very large negative (scheduled time was yesterday)
         if (timeDiff < -720) {
@@ -437,7 +443,7 @@ export async function getDueSchedules() {
         
         // Case 1: Exact match - scheduled time is NOW
         if (timeDiff === 0) {
-          console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - exact match at ${checkTime} UTC (scheduled: ${scheduledTime})`);
+          console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - exact match at ${checkTime} LOCAL (scheduled: ${scheduledTime})`);
           return schedule;
         }
         
@@ -464,22 +470,26 @@ export async function getDueSchedules() {
           console.log(`[${timestamp}] Schedule ${scheduleId}: Found ${lastExecutions.length} execution(s) today (since ${todayStart.toISOString()})`);
           
           if (lastExecutions.length > 0) {
-            console.log(`[${timestamp}] Schedule ${scheduleId}: Execution details:`, lastExecutions.map(e => ({
-              id: e._id.toString(),
-              startedAt: e.startedAt,
-              status: e.status,
-              time: `${String(new Date(e.startedAt).getUTCHours()).padStart(2, '0')}:${String(new Date(e.startedAt).getUTCMinutes()).padStart(2, '0')} UTC`
-            })));
+            console.log(`[${timestamp}] Schedule ${scheduleId}: Execution details:`, lastExecutions.map(e => {
+              const execDate = new Date(e.startedAt);
+              return {
+                id: e._id.toString(),
+                startedAt: e.startedAt,
+                status: e.status,
+                timeLocal: `${String(execDate.getHours()).padStart(2, '0')}:${String(execDate.getMinutes()).padStart(2, '0')} LOCAL`,
+                timeUTC: `${String(execDate.getUTCHours()).padStart(2, '0')}:${String(execDate.getUTCMinutes()).padStart(2, '0')} UTC`
+              };
+            }));
           }
           
           let alreadyExecuted = false;
           let executionDetails = [];
           
-          // Check if any execution happened at or after the scheduled time
+          // Check if any execution happened at or after the scheduled time (using LOCAL time)
           for (const execution of lastExecutions) {
             const execTime = new Date(execution.startedAt);
-            const execTimeInMinutes = execTime.getUTCHours() * 60 + execTime.getUTCMinutes();
-            const execTimeStr = `${String(execTime.getUTCHours()).padStart(2, '0')}:${String(execTime.getUTCMinutes()).padStart(2, '0')}`;
+            const execTimeInMinutes = execTime.getHours() * 60 + execTime.getMinutes(); // Use LOCAL time
+            const execTimeStr = `${String(execTime.getHours()).padStart(2, '0')}:${String(execTime.getMinutes()).padStart(2, '0')}`;
             
             executionDetails.push({
               time: execTimeStr,
@@ -491,30 +501,30 @@ export async function getDueSchedules() {
             // If execution happened at or after the scheduled time, it was already executed
             if (execTimeInMinutes >= scheduledTimeInMinutes) {
               alreadyExecuted = true;
-              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution found at ${execTimeStr} UTC (${execTimeInMinutes} min) >= scheduled ${scheduledTime} UTC (${scheduledTimeInMinutes} min) - ALREADY EXECUTED`);
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution found at ${execTimeStr} LOCAL (${execTimeInMinutes} min) >= scheduled ${scheduledTime} LOCAL (${scheduledTimeInMinutes} min) - ALREADY EXECUTED`);
               break;
             } else {
-              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution at ${execTimeStr} UTC (${execTimeInMinutes} min) < scheduled ${scheduledTime} UTC (${scheduledTimeInMinutes} min) - before scheduled time`);
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution at ${execTimeStr} LOCAL (${execTimeInMinutes} min) < scheduled ${scheduledTime} LOCAL (${scheduledTimeInMinutes} min) - before scheduled time`);
             }
           }
           
           if (!alreadyExecuted) {
             if (lastExecutions.length > 0) {
-              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution history: ${JSON.stringify(executionDetails.map(e => `${e.time} UTC (${e.status})`))}`);
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution history: ${JSON.stringify(executionDetails.map(e => `${e.time} LOCAL (${e.status})`))}`);
             }
-            console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - overdue (scheduled: ${scheduledTime} UTC, ${timeDiff} min ago), not executed yet`);
+            console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - overdue (scheduled: ${scheduledTime} LOCAL, ${timeDiff} min ago), not executed yet`);
             return schedule;
           } else {
-            console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - overdue but already executed for ${scheduledTime} UTC today`);
+            console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - overdue but already executed for ${scheduledTime} LOCAL today`);
           }
         } else {
           // Scheduled time is in the future
           const futureMinutes = Math.abs(timeDiff);
-          console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time ${scheduledTime} UTC is ${futureMinutes} minutes in the future - not due yet`);
+          console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time ${scheduledTime} LOCAL is ${futureMinutes} minutes in the future - not due yet`);
         }
       }
       
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${checkTime} UTC, checked all scheduled times`);
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${checkTime} LOCAL, checked all scheduled times`);
       return null;
     })
   );
