@@ -274,11 +274,17 @@ export async function getDueSchedules() {
   const { db } = await getAppDatabase();
   const schedulesCollection = db.collection('backup_schedules');
 
+  // Use UTC time for checking schedules (schedules are stored in UTC)
   const now = new Date();
-  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const currentDayUTC = now.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  const currentTimeUTC = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
+  
+  // Also log local time for debugging
+  const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const localDay = now.getDay();
 
-  console.log(`[${timestamp}] Current time: ${currentTime} (Day: ${currentDay}, ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDay]})`);
+  console.log(`[${timestamp}] UTC time: ${currentTimeUTC} (Day: ${currentDayUTC}, ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDayUTC]})`);
+  console.log(`[${timestamp}] Local time: ${localTime} (Day: ${localDay}) - Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
 
   // Get all enabled schedules
   const allSchedules = await schedulesCollection
@@ -290,21 +296,26 @@ export async function getDueSchedules() {
   // Filter schedules that are due
   const dueSchedules = allSchedules.filter(schedule => {
     const scheduleId = schedule._id.toString();
+    const scheduleTimezone = schedule.schedule?.timezone || 'UTC';
+    
+    // Use UTC for checking (schedules are stored in UTC by default)
+    const checkDay = currentDayUTC;
+    const checkTime = currentTimeUTC;
     
     // Check if today is in the schedule's days
-    if (!schedule.schedule || !schedule.schedule.days || !schedule.schedule.days.includes(currentDay)) {
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - today (${currentDay}) not in schedule days: ${JSON.stringify(schedule.schedule?.days || [])}`);
+    if (!schedule.schedule || !schedule.schedule.days || !schedule.schedule.days.includes(checkDay)) {
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - today (${checkDay}) not in schedule days: ${JSON.stringify(schedule.schedule?.days || [])}`);
       return false;
     }
 
     // Check if current time matches any of the schedule's times
     const times = schedule.schedule.times || [];
-    const isDue = times.includes(currentTime);
+    const isDue = times.includes(checkTime);
     
     if (isDue) {
-      console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - matches time ${currentTime} (scheduled times: ${times.join(', ')})`);
+      console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - matches time ${checkTime} UTC (scheduled times: ${times.join(', ')}, timezone: ${scheduleTimezone})`);
     } else {
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${currentTime} not in scheduled times: ${times.join(', ')}`);
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${checkTime} UTC not in scheduled times: ${times.join(', ')} (timezone: ${scheduleTimezone})`);
     }
     
     return isDue;
