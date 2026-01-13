@@ -273,11 +273,13 @@ export async function getDueSchedules() {
   
   const { db } = await getAppDatabase();
   const schedulesCollection = db.collection('backup_schedules');
+  const logsCollection = db.collection('backup_logs');
 
   // Use UTC time for checking schedules (schedules are stored in UTC)
   const now = new Date();
   const currentDayUTC = now.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
   const currentTimeUTC = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
+  const currentTimeInMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   
   // Also log local time for debugging
   const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -293,36 +295,86 @@ export async function getDueSchedules() {
 
   console.log(`[${timestamp}] Found ${allSchedules.length} enabled schedule(s) total`);
 
-  // Filter schedules that are due
-  const dueSchedules = allSchedules.filter(schedule => {
-    const scheduleId = schedule._id.toString();
-    const scheduleTimezone = schedule.schedule?.timezone || 'UTC';
-    
-    // Use UTC for checking (schedules are stored in UTC by default)
-    const checkDay = currentDayUTC;
-    const checkTime = currentTimeUTC;
-    
-    // Check if today is in the schedule's days
-    if (!schedule.schedule || !schedule.schedule.days || !schedule.schedule.days.includes(checkDay)) {
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - today (${checkDay}) not in schedule days: ${JSON.stringify(schedule.schedule?.days || [])}`);
-      return false;
-    }
+  // Get start of today in UTC for checking executions
+  const todayStart = new Date(now);
+  todayStart.setUTCHours(0, 0, 0, 0);
 
-    // Check if current time matches any of the schedule's times
-    const times = schedule.schedule.times || [];
-    const isDue = times.includes(checkTime);
-    
-    if (isDue) {
-      console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - matches time ${checkTime} UTC (scheduled times: ${times.join(', ')}, timezone: ${scheduleTimezone})`);
-    } else {
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${checkTime} UTC not in scheduled times: ${times.join(', ')} (timezone: ${scheduleTimezone})`);
-    }
-    
-    return isDue;
-  });
+  // Filter schedules that are due (including overdue ones)
+  const dueSchedules = await Promise.all(
+    allSchedules.map(async (schedule) => {
+      const scheduleId = schedule._id.toString();
+      const scheduleTimezone = schedule.schedule?.timezone || 'UTC';
+      
+      // Use UTC for checking (schedules are stored in UTC by default)
+      const checkDay = currentDayUTC;
+      const checkTime = currentTimeUTC;
+      
+      // Check if today is in the schedule's days
+      if (!schedule.schedule || !schedule.schedule.days || !schedule.schedule.days.includes(checkDay)) {
+        console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - today (${checkDay}) not in schedule days: ${JSON.stringify(schedule.schedule?.days || [])}`);
+        return null;
+      }
 
-  console.log(`[${timestamp}] getDueSchedules: Found ${dueSchedules.length} schedule(s) due to run`);
-  return dueSchedules;
+      const times = schedule.schedule.times || [];
+      
+      // Check each scheduled time
+      for (const scheduledTime of times) {
+        const [scheduledHours, scheduledMinutes] = scheduledTime.split(':').map(Number);
+        const scheduledTimeInMinutes = scheduledHours * 60 + scheduledMinutes;
+        const timeDiff = currentTimeInMinutes - scheduledTimeInMinutes;
+        
+        // Case 1: Exact match - scheduled time is NOW
+        if (timeDiff === 0) {
+          console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - exact match at ${checkTime} UTC (scheduled: ${scheduledTime})`);
+          return schedule;
+        }
+        
+        // Case 2: Overdue - scheduled time has passed today but hasn't been executed yet
+        // Check if scheduled time passed within the current hour (to avoid running very old overdue schedules)
+        if (timeDiff > 0 && timeDiff <= 60) {
+          // Check if this schedule was already executed for this scheduled time today
+          const lastExecutions = await logsCollection
+            .find({
+              scheduleId: schedule._id,
+              startedAt: { $gte: todayStart },
+              status: { $in: ['success', 'error'] }
+            })
+            .sort({ startedAt: -1 })
+            .toArray();
+          
+          let alreadyExecuted = false;
+          
+          // Check if any execution happened at or after the scheduled time
+          for (const execution of lastExecutions) {
+            const execTime = new Date(execution.startedAt);
+            const execTimeInMinutes = execTime.getUTCHours() * 60 + execTime.getUTCMinutes();
+            
+            // If execution happened at or after the scheduled time, it was already executed
+            if (execTimeInMinutes >= scheduledTimeInMinutes) {
+              alreadyExecuted = true;
+              break;
+            }
+          }
+          
+          if (!alreadyExecuted) {
+            console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - overdue (scheduled: ${scheduledTime} UTC, ${timeDiff} min ago), not executed yet`);
+            return schedule;
+          } else {
+            console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - overdue but already executed for ${scheduledTime} UTC today`);
+          }
+        }
+      }
+      
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${checkTime} UTC`);
+      return null;
+    })
+  );
+
+  // Filter out null values
+  const validDueSchedules = dueSchedules.filter(s => s !== null);
+
+  console.log(`[${timestamp}] getDueSchedules: Found ${validDueSchedules.length} schedule(s) due to run`);
+  return validDueSchedules;
 }
 
 
