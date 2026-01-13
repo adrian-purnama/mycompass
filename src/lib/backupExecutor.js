@@ -316,12 +316,15 @@ export async function getDueSchedules() {
       }
 
       const times = schedule.schedule.times || [];
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Checking ${times.length} scheduled time(s): ${times.join(', ')} UTC`);
       
       // Check each scheduled time
       for (const scheduledTime of times) {
         const [scheduledHours, scheduledMinutes] = scheduledTime.split(':').map(Number);
         const scheduledTimeInMinutes = scheduledHours * 60 + scheduledMinutes;
         const timeDiff = currentTimeInMinutes - scheduledTimeInMinutes;
+        
+        console.log(`[${timestamp}] Schedule ${scheduleId}: Checking scheduled time ${scheduledTime} UTC (${scheduledTimeInMinutes} min) vs current ${checkTime} UTC (${currentTimeInMinutes} min) - diff: ${timeDiff} min`);
         
         // Case 1: Exact match - scheduled time is NOW
         if (timeDiff === 0) {
@@ -330,8 +333,10 @@ export async function getDueSchedules() {
         }
         
         // Case 2: Overdue - scheduled time has passed today but hasn't been executed yet
-        // Check if scheduled time passed within the current hour (to avoid running very old overdue schedules)
-        if (timeDiff > 0 && timeDiff <= 60) {
+        // Check any overdue time from today (not just last hour)
+        if (timeDiff > 0) {
+          console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time ${scheduledTime} UTC is overdue by ${timeDiff} minutes. Checking execution history...`);
+          
           // Check if this schedule was already executed for this scheduled time today
           const lastExecutions = await logsCollection
             .find({
@@ -342,30 +347,51 @@ export async function getDueSchedules() {
             .sort({ startedAt: -1 })
             .toArray();
           
+          console.log(`[${timestamp}] Schedule ${scheduleId}: Found ${lastExecutions.length} execution(s) today (since ${todayStart.toISOString()})`);
+          
           let alreadyExecuted = false;
+          let executionDetails = [];
           
           // Check if any execution happened at or after the scheduled time
           for (const execution of lastExecutions) {
             const execTime = new Date(execution.startedAt);
             const execTimeInMinutes = execTime.getUTCHours() * 60 + execTime.getUTCMinutes();
+            const execTimeStr = `${String(execTime.getUTCHours()).padStart(2, '0')}:${String(execTime.getUTCMinutes()).padStart(2, '0')}`;
+            
+            executionDetails.push({
+              time: execTimeStr,
+              timeInMinutes: execTimeInMinutes,
+              status: execution.status,
+              startedAt: execution.startedAt
+            });
             
             // If execution happened at or after the scheduled time, it was already executed
             if (execTimeInMinutes >= scheduledTimeInMinutes) {
               alreadyExecuted = true;
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution found at ${execTimeStr} UTC (${execTimeInMinutes} min) >= scheduled ${scheduledTime} UTC (${scheduledTimeInMinutes} min) - ALREADY EXECUTED`);
               break;
+            } else {
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution at ${execTimeStr} UTC (${execTimeInMinutes} min) < scheduled ${scheduledTime} UTC (${scheduledTimeInMinutes} min) - before scheduled time`);
             }
           }
           
           if (!alreadyExecuted) {
+            if (lastExecutions.length > 0) {
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Execution history: ${JSON.stringify(executionDetails.map(e => `${e.time} UTC (${e.status})`))}`);
+            }
             console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - overdue (scheduled: ${scheduledTime} UTC, ${timeDiff} min ago), not executed yet`);
             return schedule;
           } else {
             console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - overdue but already executed for ${scheduledTime} UTC today`);
           }
+        } else {
+          // Scheduled time is in the future
+          const futureMinutes = Math.abs(timeDiff);
+          console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time ${scheduledTime} UTC is ${futureMinutes} minutes in the future - not due yet`);
         }
       }
       
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${checkTime} UTC`);
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Not due - current time ${checkTime} UTC, checked all scheduled times`);
       return null;
     })
   );
@@ -373,7 +399,16 @@ export async function getDueSchedules() {
   // Filter out null values
   const validDueSchedules = dueSchedules.filter(s => s !== null);
 
-  console.log(`[${timestamp}] getDueSchedules: Found ${validDueSchedules.length} schedule(s) due to run`);
+  console.log(`[${timestamp}] ===== getDueSchedules SUMMARY =====`);
+  console.log(`[${timestamp}] Total enabled schedules: ${allSchedules.length}`);
+  console.log(`[${timestamp}] Schedules due to run: ${validDueSchedules.length}`);
+  if (validDueSchedules.length > 0) {
+    validDueSchedules.forEach((schedule, index) => {
+      console.log(`[${timestamp}]   ${index + 1}. Schedule ID: ${schedule._id.toString()}, DB: ${schedule.databaseName}, Times: ${schedule.schedule?.times?.join(', ') || 'N/A'}`);
+    });
+  }
+  console.log(`[${timestamp}] ====================================`);
+  
   return validDueSchedules;
 }
 
