@@ -353,6 +353,11 @@ export async function getDueSchedules() {
     .toArray();
 
   console.log(`[${timestamp}] Found ${allSchedules.length} enabled schedule(s) total`);
+  
+  // Log all schedules for debugging
+  allSchedules.forEach((s, idx) => {
+    console.log(`[${timestamp}] Schedule ${idx + 1}: ID=${s._id.toString()}, DB=${s.databaseName}, Days=${JSON.stringify(s.schedule?.days || [])}, Times=${JSON.stringify(s.schedule?.times || [])}, Enabled=${s.enabled}`);
+  });
 
   // Get start of today in UTC for checking executions
   const todayStart = new Date(now);
@@ -363,6 +368,8 @@ export async function getDueSchedules() {
     allSchedules.map(async (schedule) => {
       const scheduleId = schedule._id.toString();
       const scheduleTimezone = schedule.schedule?.timezone || 'UTC';
+      
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Timezone=${scheduleTimezone}, Stored times=${JSON.stringify(schedule.schedule?.times || [])}`);
       
       // Use UTC for checking (schedules are stored in UTC by default)
       const checkDay = currentDayUTC;
@@ -375,15 +382,58 @@ export async function getDueSchedules() {
       }
 
       const times = schedule.schedule.times || [];
-      console.log(`[${timestamp}] Schedule ${scheduleId}: Checking ${times.length} scheduled time(s): ${times.join(', ')} UTC`);
+      if (times.length === 0) {
+        console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - no scheduled times configured`);
+        return null;
+      }
+      console.log(`[${timestamp}] Schedule ${scheduleId}: Checking ${times.length} scheduled time(s): ${times.join(', ')} (timezone: ${scheduleTimezone})`);
       
       // Check each scheduled time
       for (const scheduledTime of times) {
         const [scheduledHours, scheduledMinutes] = scheduledTime.split(':').map(Number);
-        const scheduledTimeInMinutes = scheduledHours * 60 + scheduledMinutes;
+        
+        // Times are stored as UTC strings (e.g., "16:01" means 16:01 UTC)
+        // But if scheduleTimezone is not UTC, the stored time might actually be in that timezone
+        // For now, we'll treat all stored times as UTC since the form hardcodes timezone to UTC
+        let scheduledTimeInMinutes = scheduledHours * 60 + scheduledMinutes;
+        
+        console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time "${scheduledTime}" interpreted as ${scheduledTimeInMinutes} minutes (timezone: ${scheduleTimezone})`);
+        
         const timeDiff = currentTimeInMinutes - scheduledTimeInMinutes;
         
-        console.log(`[${timestamp}] Schedule ${scheduleId}: Checking scheduled time ${scheduledTime} UTC (${scheduledTimeInMinutes} min) vs current ${checkTime} UTC (${currentTimeInMinutes} min) - diff: ${timeDiff} min`);
+        const scheduledTimeStr = `${String(Math.floor(scheduledTimeInMinutes / 60)).padStart(2, '0')}:${String(scheduledTimeInMinutes % 60).padStart(2, '0')}`;
+        console.log(`[${timestamp}] Schedule ${scheduleId}: Comparing scheduled time "${scheduledTime}" (${scheduledTimeInMinutes} min / ${scheduledTimeStr} UTC) vs current "${checkTime}" UTC (${currentTimeInMinutes} min) - diff: ${timeDiff} min`);
+        
+        // Handle negative timeDiff (scheduled time is later today) or very large negative (scheduled time was yesterday)
+        if (timeDiff < -720) {
+          // More than 12 hours negative means scheduled time was yesterday, check if it's overdue
+          const yesterdayDiff = 1440 + timeDiff; // Add 24 hours (1440 min)
+          console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time appears to be from yesterday (${yesterdayDiff} min ago), checking if overdue...`);
+          // Treat as overdue if it was supposed to run yesterday and hasn't been executed
+          if (yesterdayDiff > 0) {
+            // This means the scheduled time was more than 12 hours ago, likely yesterday
+            // Check if it was executed yesterday
+            const yesterdayStart = new Date(todayStart);
+            yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
+            
+            const scheduleObjectId = schedule._id instanceof ObjectId ? schedule._id : new ObjectId(schedule._id);
+            const yesterdayExecutions = await logsCollection
+              .find({
+                scheduleId: scheduleObjectId,
+                startedAt: { $gte: yesterdayStart, $lt: todayStart },
+                status: { $in: ['success', 'error'] }
+              })
+              .sort({ startedAt: -1 })
+              .toArray();
+            
+            if (yesterdayExecutions.length === 0) {
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Was due yesterday at ${scheduledTimeStr} UTC but not executed - MARKING AS OVERDUE`);
+              return schedule;
+            } else {
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Was executed yesterday, skipping`);
+            }
+          }
+        }
         
         // Case 1: Exact match - scheduled time is NOW
         if (timeDiff === 0) {
@@ -397,9 +447,14 @@ export async function getDueSchedules() {
           console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time ${scheduledTime} UTC is overdue by ${timeDiff} minutes. Checking execution history...`);
           
           // Check if this schedule was already executed for this scheduled time today
+          // Convert schedule._id to ObjectId (handles both ObjectId and string)
+          const scheduleObjectId = schedule._id instanceof ObjectId ? schedule._id : new ObjectId(schedule._id);
+          
+          console.log(`[${timestamp}] Schedule ${scheduleId}: Querying for executions with scheduleId=${scheduleObjectId.toString()}, startedAt >= ${todayStart.toISOString()}`);
+          
           const lastExecutions = await logsCollection
             .find({
-              scheduleId: schedule._id,
+              scheduleId: scheduleObjectId,
               startedAt: { $gte: todayStart },
               status: { $in: ['success', 'error'] }
             })
@@ -407,6 +462,15 @@ export async function getDueSchedules() {
             .toArray();
           
           console.log(`[${timestamp}] Schedule ${scheduleId}: Found ${lastExecutions.length} execution(s) today (since ${todayStart.toISOString()})`);
+          
+          if (lastExecutions.length > 0) {
+            console.log(`[${timestamp}] Schedule ${scheduleId}: Execution details:`, lastExecutions.map(e => ({
+              id: e._id.toString(),
+              startedAt: e.startedAt,
+              status: e.status,
+              time: `${String(new Date(e.startedAt).getUTCHours()).padStart(2, '0')}:${String(new Date(e.startedAt).getUTCMinutes()).padStart(2, '0')} UTC`
+            })));
+          }
           
           let alreadyExecuted = false;
           let executionDetails = [];
