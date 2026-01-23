@@ -60,22 +60,11 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
 
   useEffect(() => {
     checkGoogleDriveStatus();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:61',message:'Schedule effect triggered',data:{hasSchedule:!!schedule,scheduleConnectionId:schedule?.connectionId,scheduleDatabaseName:schedule?.databaseName,connectionsCount:connections.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
     if (schedule) {
       // Edit mode - populate form
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:65',message:'Setting connectionId from schedule',data:{scheduleConnectionId:schedule.connectionId,connectionsLoaded:connections.length>0,connectionExists:connections.some(c=>c.id===schedule.connectionId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      
       setConnectionId(schedule.connectionId);
       // Also set databaseName immediately if available
       if (schedule.databaseName) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:72',message:'Setting databaseName from schedule immediately',data:{databaseName:schedule.databaseName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         setDatabaseName(schedule.databaseName);
       }
       setSelectedCollections(schedule.collections || []);
@@ -93,27 +82,11 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
   }, [schedule, connections]);
 
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:80',message:'Connection effect triggered',data:{connectionId,connectionsCount:connections.length,hasConnectionId:!!connectionId,willLoadDatabases:connectionId&&connections.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
     if (connectionId && connections.length > 0) {
       // Make sure connections are loaded before trying to load databases
       const connection = connections.find(c => c.id === connectionId);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:84',message:'Looking for connection',data:{connectionId,connectionFound:!!connection,allConnectionIds:connections.map(c=>c.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      
       if (connection) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:87',message:'Calling loadDatabases',data:{connectionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         loadDatabases();
-      } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:90',message:'Connection not found in connections array',data:{connectionId,connectionsCount:connections.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
       }
     } else {
       setDatabases([]);
@@ -128,19 +101,12 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
 
   // Set database name after databases are loaded (when editing)
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:98',message:'Database name effect triggered',data:{hasSchedule:!!schedule,scheduleDatabaseName:schedule?.databaseName,databasesCount:databases.length,currentDatabaseName:databaseName,connectionId,scheduleConnectionId:schedule?.connectionId,connectionMatches:connectionId===schedule?.connectionId,dbInList:databases.includes(schedule?.databaseName)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    
     // Only run when we have a schedule, databases are loaded, and connection matches
     if (schedule?.databaseName && 
         databases.length > 0 && 
         connectionId === schedule.connectionId &&
         databases.includes(schedule.databaseName)) {
       // Set the database name from schedule
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:106',message:'Setting databaseName from schedule after databases loaded',data:{databaseName:schedule.databaseName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       setDatabaseName(schedule.databaseName);
     }
   }, [databases, schedule, connectionId, databaseName]);
@@ -175,25 +141,13 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
   };
 
   const loadDatabases = async () => {
-    if (!connectionId) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:139',message:'loadDatabases called but no connectionId',data:{connectionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      return;
-    }
+    if (!connectionId) return;
     
     const connection = connections.find(c => c.id === connectionId);
     if (!connection) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:144',message:'Connection not found in loadDatabases',data:{connectionId,connectionsCount:connections.length,allIds:connections.map(c=>c.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       console.warn('Connection not found:', connectionId);
       return;
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:150',message:'loadDatabases starting',data:{connectionId,hasConnectionString:!!connection.connectionString},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
 
     setLoading(true);
     try {
@@ -223,19 +177,12 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
       });
 
       const result = await response.json();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:175',message:'Databases loaded',data:{success:result.success,databasesCount:result.databases?.length||0,databases:result.databases,currentDatabaseName:databaseName,scheduleDatabaseName:schedule?.databaseName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      
       if (result.success) {
         const databasesList = result.databases || [];
         setDatabases(databasesList);
         
         // If editing and we have a databaseName from schedule, set it now
         if (schedule?.databaseName && databasesList.includes(schedule.databaseName) && !databaseName) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackupScheduleForm.js:181',message:'Setting databaseName after databases loaded',data:{databaseName:schedule.databaseName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-          // #endregion
           setDatabaseName(schedule.databaseName);
         }
       } else {

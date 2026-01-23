@@ -269,7 +269,7 @@ export default function LandingPage({ onGetStarted }) {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-2">
               <FiDatabase className="w-6 h-6 text-primary" />
-              <span className="text-xl font-bold text-foreground">My Compass</span>
+              <span className="text-xl md:text-md sm:text-sm font-bold text-foreground">My Compass</span>
             </div>
             <button
               onClick={() => setShowAuthModal(true)}
