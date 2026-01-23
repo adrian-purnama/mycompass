@@ -223,15 +223,36 @@ export default function ExportDialog({
         body: JSON.stringify(body)
       });
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExportDialog.js:226',message:'Export response received',data:{status:response.status,statusText:response.statusText,ok:response.ok,contentType:response.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
       if (!response.ok) {
-        // Try to get error message from response
-        try {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Export failed');
-        } catch (e) {
-          // If response is not JSON, use the error message
-          throw new Error(e.message || 'Export failed');
+        const contentType = response.headers.get('content-type');
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExportDialog.js:230',message:'Export response not OK',data:{status:response.status,contentType,isJson:contentType?.includes('application/json')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        
+        let errorMessage = `Export failed (${response.status})`;
+        if (contentType?.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (e) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExportDialog.js:238',message:'Failed to parse error JSON',data:{error:e.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+          }
+        } else {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExportDialog.js:242',message:'Export response is HTML not JSON',data:{contentType,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          const text = await response.text();
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ExportDialog.js:245',message:'Export response text preview',data:{textPreview:text.substring(0,100),isHtml:text.trim().startsWith('<!DOCTYPE')||text.trim().startsWith('<html')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
         }
+        throw new Error(errorMessage);
       }
 
       // Export always returns a ZIP file now

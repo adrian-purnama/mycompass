@@ -351,7 +351,62 @@ export default function CloneDialog({
         body: JSON.stringify(body)
       });
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:352',message:'Clone response received',data:{status:response.status,statusText:response.statusText,ok:response.ok,contentType:response.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
+      // Check if response is OK and has JSON content type
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:356',message:'Response not OK - checking content type',data:{status:response.status,contentType,isJson:contentType?.includes('application/json')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        
+        let errorMessage = `Clone operation failed (${response.status})`;
+        if (contentType?.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (e) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:364',message:'Failed to parse error JSON',data:{error:e.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+          }
+        } else {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:368',message:'Response is not JSON - likely HTML error page',data:{contentType,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          const text = await response.text();
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:371',message:'Response text preview',data:{textPreview:text.substring(0,100),isHtml:text.trim().startsWith('<!DOCTYPE')||text.trim().startsWith('<html')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        }
+        setError(errorMessage);
+        setProgress(null);
+        setLoading(false);
+        return;
+      }
+
+      const contentType = response.headers.get('content-type');
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:380',message:'Parsing JSON response',data:{contentType,isJson:contentType?.includes('application/json')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      if (!contentType?.includes('application/json')) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:384',message:'Response is not JSON despite OK status',data:{contentType},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        setError('Invalid response format from server');
+        setProgress(null);
+        setLoading(false);
+        return;
+      }
+
       const result = await response.json();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CloneDialog.js:393',message:'JSON parsed successfully',data:{success:result.success,hasError:!!result.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       if (result.success) {
         setSuccess(result.message);
         setProgress(null);

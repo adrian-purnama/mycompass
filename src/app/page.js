@@ -22,6 +22,7 @@ import CreateOrganizationModal from '@/components/CreateOrganizationModal';
 import OrganizationSelector from '@/components/OrganizationSelector';
 import OrganizationSettingsWrapper from '@/components/OrganizationSettingsWrapper';
 import InviteUserModal from '@/components/InviteUserModal';
+import LandingPage from '@/components/LandingPage';
 
 export default function Home() {
   const { user, loading: authLoading, isAuthenticated, login, register, logout } = useAuth();
@@ -307,9 +308,23 @@ export default function Home() {
               collectionName: collectionName
             })
           });
-          const countResult = await countResponse.json();
-          if (countResult.success) {
-            totalDocuments = countResult.count || 0;
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:311',message:'Count response received',data:{status:countResponse.status,ok:countResponse.ok,contentType:countResponse.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          if (!countResponse.ok) {
+            const contentType = countResponse.headers.get('content-type');
+            if (!contentType?.includes('application/json')) {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:315',message:'Count response is HTML not JSON',data:{contentType,status:countResponse.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+              console.error(`Failed to get count for ${collectionName}: Non-JSON response`);
+            }
+          } else {
+            const countResult = await countResponse.json();
+            if (countResult.success) {
+              totalDocuments = countResult.count || 0;
+            }
           }
         } catch (error) {
           console.error(`Failed to get count for ${collectionName}:`, error);
@@ -356,6 +371,10 @@ export default function Home() {
               throw new Error('Connection information is missing');
             }
 
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:374',message:'Fetching documents for backup',data:{collectionName,skip,limit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
             const documentsResponse = await fetch('/api/documents', {
               method: 'POST',
               headers: { 
@@ -365,7 +384,51 @@ export default function Home() {
               body: JSON.stringify(body)
             });
 
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:383',message:'Documents response received',data:{status:documentsResponse.status,ok:documentsResponse.ok,contentType:documentsResponse.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
+            if (!documentsResponse.ok) {
+              const contentType = documentsResponse.headers.get('content-type');
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:387',message:'Documents response not OK',data:{status:documentsResponse.status,contentType,isJson:contentType?.includes('application/json')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+              
+              if (contentType?.includes('application/json')) {
+                try {
+                  const errorData = await documentsResponse.json();
+                  throw new Error(errorData.error || `Failed to fetch documents from ${collectionName}`);
+                } catch (e) {
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:393',message:'Failed to parse error JSON',data:{error:e.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                  // #endregion
+                  throw new Error(`Failed to fetch documents from ${collectionName} (${documentsResponse.status})`);
+                }
+              } else {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:399',message:'Documents response is HTML not JSON',data:{contentType,status:documentsResponse.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
+                const text = await documentsResponse.text();
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:402',message:'Documents response text preview',data:{textPreview:text.substring(0,100),isHtml:text.trim().startsWith('<!DOCTYPE')||text.trim().startsWith('<html')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
+                throw new Error(`Failed to fetch documents from ${collectionName} (Server returned HTML instead of JSON)`);
+              }
+            }
+            
+            const contentType = documentsResponse.headers.get('content-type');
+            if (!contentType?.includes('application/json')) {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:410',message:'Documents response is not JSON despite OK status',data:{contentType},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+              throw new Error(`Invalid response format from server for ${collectionName}`);
+            }
+            
             const documentsResult = await documentsResponse.json();
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.js:416',message:'Documents JSON parsed successfully',data:{success:documentsResult.success,docCount:documentsResult.documents?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
             if (!documentsResult.success) {
               throw new Error(documentsResult.error || `Failed to fetch documents from ${collectionName}`);
             }
@@ -521,18 +584,11 @@ export default function Home() {
     );
   }
 
-  // Show auth modal if not authenticated
+  // Show landing page if not authenticated
   if (!authLoading && !isAuthenticated) {
     return (
-      <AuthModal
-        isOpen={showAuthModal}
-        onLogin={login}
-        onRegister={register}
-        onClose={() => {
-          // Don't allow closing if not authenticated
-          if (!isAuthenticated) return;
-          setShowAuthModal(false);
-        }}
+      <LandingPage 
+        onGetStarted={() => setShowAuthModal(true)} 
       />
     );
   }
