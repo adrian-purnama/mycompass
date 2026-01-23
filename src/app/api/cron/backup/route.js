@@ -32,8 +32,16 @@ export async function POST(request) {
     console.log(`[${timestamp}] ===== CHECKING FOR DUE BACKUP SCHEDULES =====`);
     console.log(`[${timestamp}] Querying database for schedules that are due to run...`);
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.js:36',message:'Cron endpoint calling getDueSchedules',data:{timestamp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+
     // Get schedules that are due to run
     const dueSchedules = await getDueSchedules();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.js:38',message:'getDueSchedules returned',data:{dueCount:dueSchedules.length,scheduleIds:dueSchedules.map(s=>s._id.toString())},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     console.log(`[${timestamp}] ===== SCHEDULE QUERY COMPLETE =====`);
     console.log(`[${timestamp}] Found ${dueSchedules.length} schedule(s) due to run`);
 

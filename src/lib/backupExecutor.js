@@ -69,6 +69,10 @@ export async function executeBackup(scheduleId) {
   const logResult = await logsCollection.insertOne(logEntry);
   const logId = logResult.insertedId.toString();
   console.log(`[${timestamp}] [executeBackup] Created backup log entry: ${logId}`);
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:71',message:'Created running log entry',data:{scheduleId,logId,status:'running'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
 
   try {
     // Connect to MongoDB
@@ -330,6 +334,10 @@ export async function getDueSchedules() {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] getDueSchedules: Checking for due backup schedules...`);
   
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:329',message:'getDueSchedules called',data:{timestamp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
   const { db } = await getAppDatabase();
   const schedulesCollection = db.collection('backup_schedules');
   const logsCollection = db.collection('backup_logs');
@@ -372,6 +380,8 @@ export async function getDueSchedules() {
   const dueSchedules = await Promise.all(
     allSchedules.map(async (schedule) => {
       const scheduleId = schedule._id.toString();
+      // Convert schedule._id to ObjectId (handles both ObjectId and string) - defined early for use throughout
+      const scheduleObjectId = schedule._id instanceof ObjectId ? schedule._id : new ObjectId(schedule._id);
       const scheduleTimezone = schedule.schedule?.timezone || 'UTC';
       
       console.log(`[${timestamp}] Schedule ${scheduleId}: Stored timezone=${scheduleTimezone}, Stored times=${JSON.stringify(schedule.schedule?.times || [])}`);
@@ -422,7 +432,7 @@ export async function getDueSchedules() {
             const yesterdayStart = new Date(todayStart);
             yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
             
-            const scheduleObjectId = schedule._id instanceof ObjectId ? schedule._id : new ObjectId(schedule._id);
+            // scheduleObjectId is defined earlier in the loop
             const yesterdayExecutions = await logsCollection
               .find({
                 scheduleId: scheduleObjectId,
@@ -433,7 +443,7 @@ export async function getDueSchedules() {
               .toArray();
             
             if (yesterdayExecutions.length === 0) {
-              console.log(`[${timestamp}] Schedule ${scheduleId}: Was due yesterday at ${scheduledTimeStr} UTC but not executed - MARKING AS OVERDUE`);
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Was due yesterday at ${scheduledTime} LOCAL but not executed - MARKING AS OVERDUE`);
               return schedule;
             } else {
               console.log(`[${timestamp}] Schedule ${scheduleId}: Was executed yesterday, skipping`);
@@ -443,8 +453,24 @@ export async function getDueSchedules() {
         
         // Case 1: Exact match - scheduled time is NOW
         if (timeDiff === 0) {
-          console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - exact match at ${checkTime} LOCAL (scheduled: ${scheduledTime})`);
-          return schedule;
+          // #region agent log - Check for running backups before exact match
+          const exactMatchRunningCheck = await logsCollection
+            .find({
+              scheduleId: scheduleObjectId,
+              startedAt: { $gte: todayStart },
+              status: 'running'
+            })
+            .sort({ startedAt: -1 })
+            .toArray();
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:445',message:'Exact time match - checking for running',data:{scheduleId,hasRunning:exactMatchRunningCheck.length>0,runningCount:exactMatchRunningCheck.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          if (exactMatchRunningCheck.length === 0) {
+            console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - exact match at ${checkTime} LOCAL (scheduled: ${scheduledTime})`);
+            return schedule;
+          } else {
+            console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - exact match but backup already running`);
+          }
         }
         
         // Case 2: Overdue - scheduled time has passed today but hasn't been executed yet
@@ -452,11 +478,11 @@ export async function getDueSchedules() {
         if (timeDiff > 0) {
           console.log(`[${timestamp}] Schedule ${scheduleId}: Scheduled time ${scheduledTime} UTC is overdue by ${timeDiff} minutes. Checking execution history...`);
           
-          // Check if this schedule was already executed for this scheduled time today
-          // Convert schedule._id to ObjectId (handles both ObjectId and string)
-          const scheduleObjectId = schedule._id instanceof ObjectId ? schedule._id : new ObjectId(schedule._id);
-          
           console.log(`[${timestamp}] Schedule ${scheduleId}: Querying for executions with scheduleId=${scheduleObjectId.toString()}, startedAt >= ${todayStart.toISOString()}`);
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:461',message:'Querying executions - BEFORE query',data:{scheduleId,scheduleObjectId:scheduleObjectId.toString(),todayStart:todayStart.toISOString(),queryStatusFilter:['success','error']},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           
           const lastExecutions = await logsCollection
             .find({
@@ -466,6 +492,22 @@ export async function getDueSchedules() {
             })
             .sort({ startedAt: -1 })
             .toArray();
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:468',message:'Querying executions - AFTER query',data:{scheduleId,executionCount:lastExecutions.length,executions:lastExecutions.map(e=>({id:e._id.toString(),status:e.status,startedAt:e.startedAt})),queryOnlyChecksSuccessOrError:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // #region agent log - Check for running backups
+          const runningExecutions = await logsCollection
+            .find({
+              scheduleId: scheduleObjectId,
+              startedAt: { $gte: todayStart },
+              status: 'running'
+            })
+            .sort({ startedAt: -1 })
+            .toArray();
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:470',message:'Checking for running backups',data:{scheduleId,runningCount:runningExecutions.length,runningExecutions:runningExecutions.map(e=>({id:e._id.toString(),status:e.status,startedAt:e.startedAt})),hasRunningBackup:runningExecutions.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           
           console.log(`[${timestamp}] Schedule ${scheduleId}: Found ${lastExecutions.length} execution(s) today (since ${todayStart.toISOString()})`);
           
@@ -508,14 +550,28 @@ export async function getDueSchedules() {
             }
           }
           
-          if (!alreadyExecuted) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:511',message:'Decision point - checking if already executed',data:{scheduleId,alreadyExecuted,runningCount:runningExecutions.length,hasRunningBackup:runningExecutions.length>0,willReturnSchedule:!alreadyExecuted&&runningExecutions.length===0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          if (!alreadyExecuted && runningExecutions.length === 0) {
             if (lastExecutions.length > 0) {
               console.log(`[${timestamp}] Schedule ${scheduleId}: Execution history: ${JSON.stringify(executionDetails.map(e => `${e.time} LOCAL (${e.status})`))}`);
             }
             console.log(`[${timestamp}] ✓ Schedule ${scheduleId}: DUE - overdue (scheduled: ${scheduledTime} LOCAL, ${timeDiff} min ago), not executed yet`);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:516',message:'Returning schedule as due',data:{scheduleId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             return schedule;
           } else {
-            console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - overdue but already executed for ${scheduledTime} LOCAL today`);
+            if (runningExecutions.length > 0) {
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - backup already running (${runningExecutions.length} running backup(s))`);
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:519',message:'Skipping schedule - running backup detected',data:{scheduleId,runningCount:runningExecutions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+            } else {
+              console.log(`[${timestamp}] Schedule ${scheduleId}: Skipped - overdue but already executed for ${scheduledTime} LOCAL today`);
+            }
           }
         } else {
           // Scheduled time is in the future
