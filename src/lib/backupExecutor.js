@@ -100,6 +100,10 @@ export async function executeBackup(scheduleId) {
     console.log(`[${timestamp}] [executeBackup] Creating ZIP archive...`);
     const zip = new JSZip();
     const collectionsBackedUp = [];
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:101',message:'ZIP created - BEFORE loop',data:{scheduleId,collectionsToBackupCount:collectionsToBackup.length,zipFileCount:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     // Process each collection
     console.log(`[${timestamp}] [executeBackup] Starting collection backup process...`);
@@ -116,6 +120,11 @@ export async function executeBackup(scheduleId) {
         const jsonString = JSON.stringify(documents, null, 2);
         zip.file(`${collectionName}.json`, jsonString);
         collectionsBackedUp.push(collectionName);
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:118',message:'Collection added to ZIP',data:{scheduleId,collectionName,docCount:documents.length,zipFileCount:Object.keys(zip.files).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        
         console.log(`[${timestamp}] [executeBackup] [${i + 1}/${collectionsToBackup.length}] ✓ ${collectionName} backed up successfully`);
       } catch (error) {
         console.error(`[${timestamp}] [executeBackup] [${i + 1}/${collectionsToBackup.length}] ✗ Error backing up collection ${collectionName}:`, error.message);
@@ -123,8 +132,17 @@ export async function executeBackup(scheduleId) {
         zip.file(`${collectionName}.json`, JSON.stringify({
           error: `Failed to backup: ${error.message}`
         }, null, 2));
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:126',message:'Error file added to ZIP',data:{scheduleId,collectionName,error:error.message,zipFileCount:Object.keys(zip.files).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
       }
     }
+    
+    // #region agent log
+    const zipFileCountBeforeGenerate = Object.keys(zip.files).length;
+    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:130',message:'ZIP BEFORE generate - after loop',data:{scheduleId,zipFileCount:zipFileCountBeforeGenerate,collectionsBackedUpCount:collectionsBackedUp.length,willBeEmpty:zipFileCountBeforeGenerate===0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     // Generate ZIP buffer
     console.log(`[${timestamp}] [executeBackup] Generating ZIP archive (${collectionsBackedUp.length} collection(s))...`);
@@ -134,7 +152,23 @@ export async function executeBackup(scheduleId) {
       compressionOptions: { level: 9 } 
     });
     const zipSizeMB = (zipBuffer.length / (1024 * 1024)).toFixed(2);
+    const zipSizeBytes = zipBuffer.length;
+    const isEmptyZip = zipSizeBytes < 100; // Empty ZIP is typically ~22 bytes, but we use 100 as threshold
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:135',message:'ZIP generated - BEFORE upload',data:{scheduleId,zipSizeBytes,zipSizeMB,zipFileCount:zipFileCountBeforeGenerate,isEmptyZip,willUpload:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     console.log(`[${timestamp}] [executeBackup] ZIP archive generated: ${zipSizeMB} MB`);
+    
+    // Prevent uploading empty ZIPs
+    if (isEmptyZip || zipFileCountBeforeGenerate === 0) {
+      console.error(`[${timestamp}] [executeBackup] ✗ Empty ZIP detected! File count: ${zipFileCountBeforeGenerate}, Size: ${zipSizeBytes} bytes. Aborting upload.`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:142',message:'Empty ZIP detected - throwing error',data:{scheduleId,zipSizeBytes,zipFileCount:zipFileCountBeforeGenerate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      throw new Error(`Cannot upload empty backup: no collections were backed up (${zipFileCountBeforeGenerate} files in ZIP)`);
+    }
 
     // Generate filename with connection name and database name
     const now = new Date();
@@ -149,6 +183,11 @@ export async function executeBackup(scheduleId) {
     // All backups will go into this folder, organized by connection and database name
     const folderName = `backup/${connection.displayName}/${schedule.databaseName}`;
     console.log(`[${timestamp}] [executeBackup] Uploading to Google Drive: ${folderName}/${fileName}...`);
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:152',message:'Calling uploadFile',data:{scheduleId,fileName,zipSizeBytes,zipFileCount:zipFileCountBeforeGenerate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     const uploadResult = await uploadFile(
       schedule.userId,
       zipBuffer,
@@ -156,6 +195,11 @@ export async function executeBackup(scheduleId) {
       'application/zip',
       folderName
     );
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backupExecutor.js:159',message:'Upload completed',data:{scheduleId,fileId:uploadResult.fileId,zipSizeBytes,zipFileCount:zipFileCountBeforeGenerate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     console.log(`[${timestamp}] [executeBackup] ✓ Uploaded to Google Drive successfully (File ID: ${uploadResult.fileId})`);
 
     // Update log entry with success

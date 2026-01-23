@@ -228,7 +228,11 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
         const filtered = allCollections.filter(c => !c.name.startsWith('system.'));
         setCollections(filtered);
         if (selectedCollections.length === 0) {
-          // Auto-select all if none selected
+          // Auto-select all if none selected (for new schedules)
+          // For existing schedules with empty collections array, this means "all collections" mode
+          setSelectedCollections(filtered.map(c => c.name));
+        } else if (selectedCollections.length > 0 && schedule && schedule.collections && schedule.collections.length === 0) {
+          // Editing a schedule with "all collections" mode - show all as selected
           setSelectedCollections(filtered.map(c => c.name));
         }
       }
@@ -314,10 +318,16 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
 
     setLoading(true);
     try {
+      // If all collections are selected, save empty array to enable "all collections" mode
+      // This allows new collections to be automatically included in backups
+      const collectionsToSave = (selectedCollections.length > 0 && selectedCollections.length === collections.length)
+        ? [] // All selected = save empty array for "all collections" mode
+        : selectedCollections; // Specific selection = save the list
+      
       const scheduleData = {
         connectionId,
         databaseName,
-        collections: selectedCollections,
+        collections: collectionsToSave,
         destination: {
           type: 'google_drive',
           config: {},
@@ -486,9 +496,11 @@ export default function BackupScheduleForm({ schedule, onSave, onCancel, organiz
               )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {selectedCollections.length > 0
+              {selectedCollections.length > 0 && selectedCollections.length < collections.length
                 ? `${selectedCollections.length} collection(s) selected`
-                : 'All collections will be backed up'}
+                : selectedCollections.length === collections.length && collections.length > 0
+                ? `All ${collections.length} collection(s) selected (new collections will be included automatically)`
+                : 'All collections will be backed up (new collections will be included automatically)'}
             </p>
           </div>
         )}
