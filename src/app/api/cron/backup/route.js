@@ -10,8 +10,7 @@ export async function POST(request) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ===== CRON API ENDPOINT CALLED =====`);
   
-  try {
-    // Verify API key
+  // Verify API key
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       console.error(`[${timestamp}] ✗ Unauthorized: No Bearer token`);
@@ -173,5 +172,3 @@ export async function POST(request) {
     }
   }
 }
-
-
