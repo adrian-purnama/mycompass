@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getDueSchedules, executeBackup } from '@/lib/backupExecutor';
+import { getAppDatabase } from '@/lib/appdb';
 
 const CRON_API_KEY = process.env.CRON_API_KEY || 'change-this-in-production';
+const CRON_LOCK_TTL_MS = 15 * 60 * 1000; // 15 minutes - released when run finishes, or auto-expires if process dies
 
 // POST - Endpoint for cron job to call (protected with API key)
 export async function POST(request) {
@@ -29,20 +31,42 @@ export async function POST(request) {
     }
 
     console.log(`[${timestamp}] ✓ API key verified`);
-    console.log(`[${timestamp}] ===== CHECKING FOR DUE BACKUP SCHEDULES =====`);
-    console.log(`[${timestamp}] Querying database for schedules that are due to run...`);
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.js:36',message:'Cron endpoint calling getDueSchedules',data:{timestamp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
+    // Global cron lock: only one backup cron run at a time (atomic acquire to prevent race when many cron invocations hit at once)
+    const { db } = await getAppDatabase();
+    const locksCollection = db.collection('cron_locks');
+    const now = new Date();
+    const lockId = 'backup_cron';
+    const lockExpires = new Date(now.getTime() + CRON_LOCK_TTL_MS);
 
-    // Get schedules that are due to run
-    const dueSchedules = await getDueSchedules();
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6745792a-dc42-4aa9-9e3f-c2b287f1b88e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.js:38',message:'getDueSchedules returned',data:{dueCount:dueSchedules.length,scheduleIds:dueSchedules.map(s=>s._id.toString())},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    console.log(`[${timestamp}] ===== SCHEDULE QUERY COMPLETE =====`);
+    const acquired = await locksCollection.findOneAndUpdate(
+      {
+        _id: lockId,
+        $or: [
+          { lockedUntil: { $exists: false } },
+          { lockedUntil: { $lte: now } },
+        ],
+      },
+      { $set: { lockedUntil: lockExpires, lockedAt: now } },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    if (!acquired) {
+      console.log(`[${timestamp}] ℹ Cron lock held by another run, skipping this invocation`);
+      return NextResponse.json({
+        success: true,
+        message: 'Cron already running - skipped to prevent duplicate backups',
+        executed: 0,
+      });
+    }
+
+    try {
+      console.log(`[${timestamp}] ===== CHECKING FOR DUE BACKUP SCHEDULES =====`);
+      console.log(`[${timestamp}] Querying database for schedules that are due to run...`);
+
+      // Get schedules that are due to run
+      const dueSchedules = await getDueSchedules();
+      console.log(`[${timestamp}] ===== SCHEDULE QUERY COMPLETE =====`);
     console.log(`[${timestamp}] Found ${dueSchedules.length} schedule(s) due to run`);
 
     if (dueSchedules.length === 0) {
@@ -137,6 +161,16 @@ export async function POST(request) {
       { success: false, error: error.message || 'Failed to execute cron backup' },
       { status: 500 }
     );
+  } finally {
+    try {
+      await locksCollection.updateOne(
+        { _id: lockId },
+        { $set: { lockedUntil: new Date(0) } }
+      );
+      console.log(`[${timestamp}] Cron lock released`);
+    } catch (releaseErr) {
+      console.error(`[${timestamp}] Failed to release cron lock:`, releaseErr.message);
+    }
   }
 }
 
